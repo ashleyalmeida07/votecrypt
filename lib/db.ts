@@ -16,11 +16,13 @@ export interface User {
 
 export interface Voter {
     id: number;
-    user_id: number;
-    voter_id: string;
-    national_id: string;
-    full_name: string;
-    is_verified: boolean;
+    firebase_uid: string;
+    wallet_address: string | null;
+    is_registered: boolean;
+    has_voted: boolean;
+    voted_for: number | null;
+    transaction_hash: string | null;
+    created_at: Date;
 }
 
 export async function createOrUpdateUser(
@@ -74,13 +76,7 @@ export async function getUserByEmail(email: string): Promise<User | null> {
     return result.rows.length > 0 ? (result.rows[0] as User) : null;
 }
 
-export async function getVoterByUserId(userId: number): Promise<Voter | null> {
-    const result = await vercelSql`
-    SELECT * FROM voters WHERE user_id = ${userId}
-  `;
 
-    return result.rows.length > 0 ? (result.rows[0] as Voter) : null;
-}
 
 export async function createAuditLog(
     userId: number | null,
@@ -129,7 +125,8 @@ export async function initDatabase() {
         await sql`
             CREATE TABLE IF NOT EXISTS voters (
                 id SERIAL PRIMARY KEY,
-                wallet_address VARCHAR(42) NOT NULL UNIQUE,
+                firebase_uid VARCHAR(255) UNIQUE,
+                wallet_address VARCHAR(42),
                 is_registered BOOLEAN DEFAULT FALSE,
                 has_voted BOOLEAN DEFAULT FALSE,
                 voted_for INTEGER,
@@ -137,6 +134,15 @@ export async function initDatabase() {
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         `
+
+        // Migration: Add firebase_uid if missing
+        try {
+            await sql`ALTER TABLE voters ADD COLUMN IF NOT EXISTS firebase_uid VARCHAR(255) UNIQUE`
+            await sql`ALTER TABLE voters ALTER COLUMN wallet_address DROP NOT NULL`
+            await sql`ALTER TABLE candidates ADD COLUMN IF NOT EXISTS election_id INTEGER`
+        } catch (e) {
+            console.log('Migration note:', e)
+        }
 
         // Create elections table
         await sql`
@@ -176,21 +182,29 @@ export async function addCandidateToDb(
     name: string,
     party: string,
     transactionHash: string,
-    blockchainId?: number
+    blockchainId?: number,
+    electionId?: number
 ) {
     const result = await sql`
-        INSERT INTO candidates (name, party, transaction_hash, blockchain_id)
-        VALUES (${name}, ${party}, ${transactionHash}, ${blockchainId ?? null})
+        INSERT INTO candidates (name, party, transaction_hash, blockchain_id, election_id)
+        VALUES (${name}, ${party}, ${transactionHash}, ${blockchainId ?? null}, ${electionId ?? null})
         RETURNING *
     `
     return result[0]
 }
 
-export async function getCandidatesFromDb() {
-    const candidates = await sql`
-        SELECT * FROM candidates ORDER BY id ASC
-    `
-    return candidates
+export async function getCandidatesFromDb(electionId?: number) {
+    if (electionId) {
+        return await sql`SELECT * FROM candidates WHERE election_id = ${electionId} ORDER BY id ASC`
+    }
+    // Fallback or legacy: fetch all or those without election_id?
+    // Better to fetch candidates for the latest election if no ID provided
+    const latestElection = await getLatestElection()
+    if (latestElection) {
+        return await sql`SELECT * FROM candidates WHERE election_id = ${latestElection.id} ORDER BY id ASC`
+    }
+
+    return await sql`SELECT * FROM candidates ORDER BY id ASC`
 }
 
 export async function updateCandidateVoteCount(blockchainId: number, voteCount: number) {
@@ -221,6 +235,14 @@ export async function getVotersFromDb() {
     return voters
 }
 
+export async function getVoterByFirebaseUid(firebaseUid: string): Promise<Voter | null> {
+    const result = await sql`
+    SELECT * FROM voters WHERE firebase_uid = ${firebaseUid}
+  `;
+
+    return result.length > 0 ? (result[0] as Voter) : null;
+}
+
 // Transaction logging
 export async function logTransaction(
     action: string,
@@ -243,34 +265,50 @@ export async function getTransactionLogs(limit = 50) {
 }
 
 // Election operations
+export async function getLatestElection() {
+    const result = await sql`SELECT * FROM elections ORDER BY id DESC LIMIT 1`
+    return result.length > 0 ? result[0] : null
+}
+
 export async function updateElectionState(state: string, contractAddress?: string) {
     // Get or create current election
-    const existing = await sql`SELECT * FROM elections ORDER BY id DESC LIMIT 1`
+    const existing = await getLatestElection()
 
-    if (existing.length === 0 || state === 'Created') {
-        // Create new election entry
+    if (!existing || (state === 'Created' && existing.state === 'Ended')) {
+        // Create new election entry ONLY if explicitly starting 'Created' or if none exists
+        // If state is 'Created' but we want to start a NEW one, we insert.
+        // Logic: if existing is 'Ended' and we pass 'Created', new election.
+
+        // If we are just updating the current election (e.g. Created -> Voting) we don't insert.
+        if (existing && state !== 'Created') {
+            // Update logic below
+        } else {
+            const result = await sql`
+                INSERT INTO elections (name, state, contract_address)
+                VALUES ('Election', ${state}, ${contractAddress ?? null})
+                RETURNING *
+            `
+            return result[0]
+        }
+    }
+
+    // Update existing
+    const id = existing.id
+    if (state === 'Voting') {
         await sql`
-            INSERT INTO elections (name, state, contract_address)
-            VALUES ('Election', ${state}, ${contractAddress ?? null})
+            UPDATE elections SET state = ${state}, started_at = CURRENT_TIMESTAMP
+            WHERE id = ${id}
+        `
+    } else if (state === 'Ended') {
+        await sql`
+            UPDATE elections SET state = ${state}, ended_at = CURRENT_TIMESTAMP
+            WHERE id = ${id}
         `
     } else {
-        // Update existing
-        if (state === 'Voting') {
-            await sql`
-                UPDATE elections SET state = ${state}, started_at = CURRENT_TIMESTAMP
-                WHERE id = ${existing[0].id}
-            `
-        } else if (state === 'Ended') {
-            await sql`
-                UPDATE elections SET state = ${state}, ended_at = CURRENT_TIMESTAMP
-                WHERE id = ${existing[0].id}
-            `
-        } else {
-            await sql`
-                UPDATE elections SET state = ${state}
-                WHERE id = ${existing[0].id}
-            `
-        }
+        await sql`
+            UPDATE elections SET state = ${state}
+            WHERE id = ${id}
+        `
     }
 }
 

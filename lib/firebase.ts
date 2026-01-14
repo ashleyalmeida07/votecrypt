@@ -15,10 +15,13 @@ const firebaseConfig = {
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 const auth = getAuth(app);
 
-// Verify auth is properly initialized
-if (!auth) {
-  console.error('Firebase auth failed to initialize. Config:', firebaseConfig);
-  throw new Error('Firebase authentication initialization failed');
+// Enable persistence
+import { setPersistence, browserLocalPersistence } from 'firebase/auth';
+if (typeof window !== 'undefined') {
+  setPersistence(auth, browserLocalPersistence)
+    .catch((error: any) => {
+      console.error("Error setting persistence:", error);
+    });
 }
 
 const googleProvider = new GoogleAuthProvider();

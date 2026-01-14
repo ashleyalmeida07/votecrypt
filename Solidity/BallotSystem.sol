@@ -147,6 +147,24 @@ contract BallotSystem {
         emit VoteCasted(msg.sender, _candidateId);
     }
 
+    /**
+     * @dev Allows the Election Official to cast a vote on behalf of a verified user (Gasless/Proxy Voting).
+     * This is essential for the Firebase Auth flow where users don't have crypto wallets.
+     */
+    function voteFor(address _voterAddress, uint _candidateId) public onlyOfficial inState(State.Voting) {
+        Voter storage sender = voters[_voterAddress];
+
+        require(sender.isRegistered, "Voter is not registered");
+        require(!sender.hasVoted, "Voter has already voted");
+        require(_candidateId < candidates.length, "Invalid candidate ID");
+
+        sender.hasVoted = true;
+        sender.votedFor = _candidateId;
+        candidates[_candidateId].voteCount++;
+
+        emit VoteCasted(_voterAddress, _candidateId);
+    }
+
     // --- READ FUNCTIONS (TRANSPARENCY) ---
 
     function getCandidateCount() public view returns (uint) {

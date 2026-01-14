@@ -93,47 +93,34 @@ export default function AdminPanel() {
 
       if (!res.ok) throw new Error(data.error || 'Action failed')
 
-      // Show pending toast with link to explorer
-      toast.info('Transaction submitted!', {
+      // Optimistic UI: Update local state immediately if possible or just trigger one fetch
+      await fetchStats()
+
+      // Show success toast with link to explorer
+      toast.success(`Action submitted!`, {
         description: (
           <div>
-            <p>Waiting for blockchain confirmation...</p>
+            <p>{data.message}</p>
+            {data.warning && <p className="text-amber-600 text-xs mt-1">{data.warning}</p>}
             {data.explorerUrl && (
               <a
                 href={data.explorerUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-blue-400 underline text-sm"
+                className="text-blue-400 underline text-sm mt-1 block"
               >
-                View on Etherscan →
+                View Transaction →
               </a>
             )}
           </div>
         ),
-        duration: 15000,
+        duration: 5000,
       })
 
       // Clear new election name input
       if (action === 'newElection') {
         setNewElectionName('')
       }
-
-      // Poll for state change - check every 3 seconds for up to 30 seconds
-      let attempts = 0
-      const maxAttempts = 10
-      const pollInterval = setInterval(async () => {
-        attempts++
-        await fetchStats()
-
-        // Check if state has changed
-        const expectedState = action === 'start' ? 1 : action === 'end' ? 2 : 0
-        if (stats?.state === expectedState || attempts >= maxAttempts) {
-          clearInterval(pollInterval)
-          if (stats?.state === expectedState) {
-            toast.success(`Election ${action === 'start' ? 'started' : action === 'end' ? 'ended' : 'created'} successfully!`)
-          }
-        }
-      }, 3000)
 
     } catch (error: any) {
       toast.error(`Failed to ${action === 'newElection' ? 'start new' : action} election`, {
