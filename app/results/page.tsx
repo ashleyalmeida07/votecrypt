@@ -5,33 +5,75 @@ import { Shield, RefreshCw, CheckCircle, BarChart3 } from "lucide-react"
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts"
 
 export default function ResultsPage() {
+  const [results, setResults] = useState<any[]>([])
+  const [election, setElection] = useState<any>(null)
+  const [metadata, setMetadata] = useState({ totalVotes: 0, lastUpdated: new Date() })
+  const [loading, setLoading] = useState(true)
+  const [syncing, setSyncing] = useState(false)
   const [autoRefresh, setAutoRefresh] = useState(true)
-  const [lastUpdated, setLastUpdated] = useState(new Date())
+
+  const fetchResults = async () => {
+    try {
+      const res = await fetch('/api/results')
+      const data = await res.json()
+      if (data.success) {
+        setResults(data.results)
+        setElection(data.election)
+        setMetadata({
+          totalVotes: data.totalVotes,
+          lastUpdated: new Date(data.lastUpdated)
+        })
+      }
+    } catch (error) {
+      console.error("Failed to fetch results:", error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleSync = async () => {
+    setSyncing(true)
+    try {
+      // First sync with blockchain
+      const syncRes = await fetch('/api/db/sync', { method: 'POST' })
+      const syncData = await syncRes.json()
+
+      if (syncData.success) {
+        // Then refresh local results
+        await fetchResults()
+      }
+    } catch (error) {
+      console.error("Sync failed:", error)
+    } finally {
+      setSyncing(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchResults()
+  }, [])
 
   useEffect(() => {
     if (!autoRefresh) return
 
-    const interval = setInterval(() => {
-      setLastUpdated(new Date())
-    }, 10000)
-
+    const interval = setInterval(fetchResults, 10000)
     return () => clearInterval(interval)
   }, [autoRefresh])
 
-  const candidateResults = [
-    { name: "Alice Johnson", votes: 4230, percentage: 42.3, party: "Democratic Party" },
-    { name: "Robert Chen", votes: 3890, percentage: 38.9, party: "Republican Party" },
-    { name: "Maria Garcia", votes: 1880, percentage: 18.8, party: "Independent" },
-  ]
-
-  const totalVotes = candidateResults.reduce((sum, c) => sum + c.votes, 0)
-
-  const chartData = candidateResults.map((candidate) => ({
+  const chartData = results.map((candidate) => ({
     name: candidate.name,
-    votes: candidate.votes,
+    votes: candidate.vote_count,
   }))
 
-  const COLORS = ["#0f172a", "#14b8a6", "#f59e0b"]
+  const COLORS = ["#0f172a", "#14b8a6", "#f59e0b", "#6366f1", "#ec4899", "#8b5cf6"]
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-slate-900"></div>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -57,33 +99,47 @@ export default function ResultsPage() {
 
       <div className="ballot-container py-12">
         {/* Header */}
-        <div className="mb-12">
-          <h1 className="text-4xl font-bold text-slate-900 mb-4">Live Election Results</h1>
-          <p className="text-gray-600 text-lg">
-            Presidential Election 2025 - Results updated in real-time from the blockchain
-          </p>
+        <div className="mb-12 flex flex-col md:flex-row md:items-end justify-between gap-4">
+          <div>
+            <h1 className="text-4xl font-bold text-slate-900 mb-4">Live Election Results</h1>
+            <p className="text-gray-600 text-lg">
+              {election?.name || "Election"} - Results updated in real-time from the blockchain
+            </p>
+          </div>
+          <button
+            onClick={handleSync}
+            disabled={syncing}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all ${syncing
+              ? "bg-teal-100 text-teal-700 cursor-wait"
+              : "bg-teal-600 text-white hover:bg-teal-700 shadow-lg hover:shadow-xl"
+              }`}
+          >
+            <RefreshCw className={`w-4 h-4 ${syncing ? "animate-spin" : ""}`} />
+            {syncing ? "Verifying with Blockchain..." : "Verify & Refresh Results"}
+          </button>
         </div>
 
         {/* Top Stats */}
         <div className="grid md:grid-cols-4 gap-6 mb-12">
           <div className="ballot-card ballot-card-hover p-6">
             <p className="text-gray-600 text-sm font-medium mb-2">Total Votes Cast</p>
-            <p className="text-3xl font-bold text-slate-900">{totalVotes.toLocaleString()}</p>
+            <p className="text-3xl font-bold text-slate-900">{metadata.totalVotes.toLocaleString()}</p>
           </div>
           <div className="ballot-card ballot-card-hover p-6">
-            <p className="text-gray-600 text-sm font-medium mb-2">Voter Turnout</p>
-            <p className="text-3xl font-bold text-teal-600">67.4%</p>
+            <p className="text-gray-600 text-sm font-medium mb-2">Participating Candidates</p>
+            <p className="text-3xl font-bold text-teal-600">{results.length}</p>
           </div>
           <div className="ballot-card ballot-card-hover p-6">
             <p className="text-gray-600 text-sm font-medium mb-2">Election Status</p>
-            <p className="text-lg font-bold text-slate-900">
-              <span className="inline-block w-2 h-2 bg-green-500 rounded-full mr-2"></span>
-              Active
+            <p className="text-lg font-bold text-slate-900 flex items-center">
+              <span className={`inline-block w-2 h-2 rounded-full mr-2 ${election?.state === 'Voting' ? 'bg-green-500' : 'bg-gray-400'
+                }`}></span>
+              {election?.state || "Unknown"}
             </p>
           </div>
           <div className="ballot-card ballot-card-hover p-6">
             <p className="text-gray-600 text-sm font-medium mb-2">Last Updated</p>
-            <p className="text-sm font-mono text-slate-900">{lastUpdated.toLocaleTimeString()}</p>
+            <p className="text-sm font-mono text-slate-900">{metadata.lastUpdated.toLocaleTimeString()}</p>
           </div>
         </div>
 
@@ -93,36 +149,42 @@ export default function ResultsPage() {
             {/* Bar Chart */}
             <div className="ballot-card ballot-card-hover p-8">
               <h2 className="text-xl font-bold text-slate-900 mb-6">Vote Distribution</h2>
-              <ResponsiveContainer width="100%" height={350}>
-                <BarChart data={chartData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                  <XAxis dataKey="name" />
-                  <YAxis />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: "#fff",
-                      border: "1px solid #e5e7eb",
-                      borderRadius: "8px",
-                    }}
-                  />
-                  <Bar dataKey="votes" fill="#0f172a" radius={[8, 8, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
+              {results.length > 0 ? (
+                <ResponsiveContainer width="100%" height={350}>
+                  <BarChart data={chartData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                    <XAxis dataKey="name" />
+                    <YAxis allowDecimals={false} />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: "#fff",
+                        border: "1px solid #e5e7eb",
+                        borderRadius: "8px",
+                      }}
+                    />
+                    <Bar dataKey="votes" fill="#0f172a" radius={[8, 8, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="h-[350px] flex items-center justify-center text-gray-500">
+                  No votes cast yet
+                </div>
+              )}
             </div>
 
             {/* Candidate Results Table */}
             <div className="ballot-card ballot-card-hover p-8">
               <h2 className="text-xl font-bold text-slate-900 mb-6">Detailed Results</h2>
               <div className="space-y-6">
-                {candidateResults.map((candidate, idx) => (
-                  <div key={idx}>
+                {results.map((candidate, idx) => (
+                  <div key={candidate.id || idx}>
                     <div className="flex items-center justify-between mb-3">
                       <div>
                         <h3 className="font-bold text-slate-900">{candidate.name}</h3>
                         <p className="text-sm text-gray-600">{candidate.party}</p>
                       </div>
                       <div className="text-right">
-                        <p className="font-bold text-slate-900">{candidate.votes.toLocaleString()} votes</p>
+                        <p className="font-bold text-slate-900">{candidate.vote_count.toLocaleString()} votes</p>
                         <p className="text-sm text-teal-600 font-semibold">{candidate.percentage}%</p>
                       </div>
                     </div>
@@ -131,12 +193,15 @@ export default function ResultsPage() {
                         className="h-full rounded-full transition-all"
                         style={{
                           width: `${candidate.percentage}%`,
-                          backgroundColor: COLORS[idx],
+                          backgroundColor: COLORS[idx % COLORS.length],
                         }}
                       ></div>
                     </div>
                   </div>
                 ))}
+                {results.length === 0 && (
+                  <p className="text-center text-gray-500 py-4">No candidates found.</p>
+                )}
               </div>
             </div>
           </div>
@@ -146,25 +211,33 @@ export default function ResultsPage() {
             {/* Pie Chart */}
             <div className="ballot-card ballot-card-hover p-8">
               <h3 className="text-lg font-bold text-slate-900 mb-6 text-center">Vote Share</h3>
-              <ResponsiveContainer width="100%" height={250}>
-                <PieChart>
-                  <Pie
-                    data={chartData}
-                    cx="50%"
-                    cy="50%"
-                    labelLine={false}
-                    label={({ name, percent }) => `${(percent * 100).toFixed(1)}%`}
-                    outerRadius={80}
-                    fill="#8884d8"
-                    dataKey="votes"
-                  >
-                    {COLORS.map((color, index) => (
-                      <Cell key={`cell-${index}`} fill={color} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                </PieChart>
-              </ResponsiveContainer>
+              <div className="h-[250px]">
+                {results.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={chartData}
+                        cx="50%"
+                        cy="50%"
+                        labelLine={false}
+                        label={({ name, percent }) => percent > 0 ? `${(percent * 100).toFixed(1)}%` : ''}
+                        outerRadius={80}
+                        fill="#8884d8"
+                        dataKey="votes"
+                      >
+                        {results.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip />
+                    </PieChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="h-full flex items-center justify-center text-gray-500">
+                    No data
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Blockchain Status */}
@@ -177,19 +250,24 @@ export default function ResultsPage() {
                 <div>
                   <p className="text-gray-600">Contract Address</p>
                   <code className="text-xs font-mono bg-gray-50 p-2 rounded block break-all mt-1 text-gray-700">
-                    0x4a9c8f...2e3d4b
+                    {election?.contract_address || "Not Deployed"}
                   </code>
                 </div>
                 <div>
                   <p className="text-gray-600">Total Votes on Chain</p>
-                  <p className="font-bold text-slate-900">{totalVotes.toLocaleString()}</p>
+                  <p className="font-bold text-slate-900">{metadata.totalVotes.toLocaleString()}</p>
                 </div>
                 <div>
                   <p className="text-gray-600">Network</p>
-                  <p className="font-semibold text-teal-600">Ethereum Mainnet</p>
+                  <p className="font-semibold text-teal-600">Sepolia Testnet</p>
                 </div>
                 <div className="pt-3 border-t border-gray-200">
-                  <a href="#" className="text-teal-600 hover:underline font-medium text-sm flex items-center gap-1">
+                  <a
+                    href={`https://sepolia.etherscan.io/address/${election?.contract_address}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-teal-600 hover:underline font-medium text-sm flex items-center gap-1"
+                  >
                     View on Blockchain Explorer
                     <span>→</span>
                   </a>
@@ -233,13 +311,13 @@ export default function ResultsPage() {
             <h3 className="font-bold text-slate-900 mb-3">Election Details</h3>
             <ul className="space-y-2 text-sm text-gray-600">
               <li>
-                <span className="font-medium">Voting Opens:</span> March 15, 2025 8:00 AM
+                <span className="font-medium">Voting Opens:</span> {election?.started_at ? new Date(election.started_at).toLocaleString() : 'Not Started'}
               </li>
               <li>
-                <span className="font-medium">Voting Closes:</span> March 15, 2025 8:00 PM
+                <span className="font-medium">Voting Closes:</span> {election?.ended_at ? new Date(election.ended_at).toLocaleString() : 'TBD'}
               </li>
               <li>
-                <span className="font-medium">Results Published:</span> March 16, 2025 12:00 AM
+                <span className="font-medium">Results Published:</span> Real-time
               </li>
             </ul>
           </div>
