@@ -28,3 +28,4 @@ next-env.d.ts
 
 # Solidity
 Solidity/artifacts
+backend/venv312/
