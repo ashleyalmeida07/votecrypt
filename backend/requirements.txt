@@ -1,0 +1,26 @@
+# BALLOT Face Verification Backend Dependencies
+# Install with: pip install -r requirements.txt
+
+# Web Framework
+fastapi==0.109.2
+uvicorn[standard]==0.27.1
+python-multipart==0.0.9
+
+# Image Processing
+opencv-python==4.9.0.80
+numpy<2,>=1.24.0
+Pillow>=10.0.0
+
+# Face Detection (YOLO)
+ultralytics>=8.1.0
+
+# Face Recognition (DeepFace with ArcFace)
+deepface>=0.0.89
+tf-keras>=2.15.0
+
+# Optional: For better performance
+# tensorflow>=2.15.0  # Uncomment if needed
+
+# Utilities
+pydantic>=2.0.0
+typing-extensions>=4.0.0
