@@ -55,8 +55,8 @@ export default function AdminPanel() {
   useEffect(() => {
     if (adminAuthenticated) {
       fetchStats()
-      // Poll for updates every 30 seconds
-      const interval = setInterval(fetchStats, 30000)
+      // Poll for updates every 5 seconds for responsive UI
+      const interval = setInterval(fetchStats, 5000)
       return () => clearInterval(interval)
     }
   }, [adminAuthenticated, fetchStats])
@@ -93,26 +93,48 @@ export default function AdminPanel() {
 
       if (!res.ok) throw new Error(data.error || 'Action failed')
 
-      if (data.pending) {
-        toast.info('Transaction submitted!', {
-          description: `Hash: ${data.transactionHash.slice(0, 18)}... - Waiting for confirmation.`,
-          duration: 10000,
-        })
-      } else {
-        const actionLabels: Record<string, string> = { start: 'started', end: 'ended', newElection: 'created' }
-        toast.success(`Election ${actionLabels[action]} successfully!`, {
-          description: `Transaction: ${data.transactionHash.slice(0, 10)}...`,
-        })
-      }
+      // Show pending toast with link to explorer
+      toast.info('Transaction submitted!', {
+        description: (
+          <div>
+            <p>Waiting for blockchain confirmation...</p>
+            {data.explorerUrl && (
+              <a
+                href={data.explorerUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-400 underline text-sm"
+              >
+                View on Etherscan →
+              </a>
+            )}
+          </div>
+        ),
+        duration: 15000,
+      })
 
       // Clear new election name input
       if (action === 'newElection') {
         setNewElectionName('')
       }
 
-      // Refresh stats after a delay to allow blockchain to update
-      setTimeout(() => fetchStats(), 5000)
-      await fetchStats()
+      // Poll for state change - check every 3 seconds for up to 30 seconds
+      let attempts = 0
+      const maxAttempts = 10
+      const pollInterval = setInterval(async () => {
+        attempts++
+        await fetchStats()
+
+        // Check if state has changed
+        const expectedState = action === 'start' ? 1 : action === 'end' ? 2 : 0
+        if (stats?.state === expectedState || attempts >= maxAttempts) {
+          clearInterval(pollInterval)
+          if (stats?.state === expectedState) {
+            toast.success(`Election ${action === 'start' ? 'started' : action === 'end' ? 'ended' : 'created'} successfully!`)
+          }
+        }
+      }, 3000)
+
     } catch (error: any) {
       toast.error(`Failed to ${action === 'newElection' ? 'start new' : action} election`, {
         description: error.message,
@@ -434,29 +456,60 @@ export default function AdminPanel() {
             {/* Election Control */}
             <div className="ballot-card ballot-card-hover p-6">
               <h3 className="font-bold text-slate-900 mb-4">Election Control</h3>
+
+              {/* Current State Indicator */}
+              <div className="mb-4 p-3 rounded-lg bg-gray-50 border">
+                <p className="text-xs text-gray-500 uppercase">Current State</p>
+                <p className={`font-bold text-lg ${stats?.state === 0 ? 'text-blue-600' :
+                  stats?.state === 1 ? 'text-green-600' :
+                    'text-gray-600'
+                  }`}>
+                  {stats?.state === 0 ? '📋 Created' :
+                    stats?.state === 1 ? '🗳️ Voting' :
+                      stats?.state === 2 ? '✅ Ended' : 'Loading...'}
+                </p>
+              </div>
+
               <div className="space-y-3">
-                <button
-                  onClick={() => handleElectionAction('start')}
-                  disabled={stats?.state !== 0 || actionLoading !== null}
-                  className={`w-full px-4 py-2 rounded-xl font-medium transition-colors flex items-center justify-center gap-2 ${stats?.state === 0 && actionLoading === null
-                    ? "ballot-primary-btn hover:opacity-90"
-                    : "bg-gray-200 text-gray-400 cursor-not-allowed"
-                    }`}
-                >
-                  {actionLoading === 'start' && <Loader2 className="w-4 h-4 animate-spin" />}
-                  Start Election
-                </button>
-                <button
-                  onClick={() => handleElectionAction('end')}
-                  disabled={stats?.state !== 1 || actionLoading !== null}
-                  className={`w-full px-4 py-2 rounded-xl font-medium transition-colors flex items-center justify-center gap-2 ${stats?.state === 1 && actionLoading === null
-                    ? "bg-red-600 text-white hover:bg-red-700"
-                    : "bg-gray-200 text-gray-400 cursor-not-allowed"
-                    }`}
-                >
-                  {actionLoading === 'end' && <Loader2 className="w-4 h-4 animate-spin" />}
-                  End Election
-                </button>
+                {/* Start Election Button */}
+                <div>
+                  <button
+                    onClick={() => handleElectionAction('start')}
+                    disabled={stats?.state !== 0 || actionLoading !== null}
+                    className={`w-full px-4 py-2 rounded-xl font-medium transition-colors flex items-center justify-center gap-2 ${stats?.state === 0 && actionLoading === null
+                      ? "ballot-primary-btn hover:opacity-90"
+                      : "bg-gray-200 text-gray-400 cursor-not-allowed"
+                      }`}
+                  >
+                    {actionLoading === 'start' && <Loader2 className="w-4 h-4 animate-spin" />}
+                    {actionLoading === 'start' ? 'Starting...' : 'Start Election'}
+                  </button>
+                  {stats?.state !== 0 && stats?.state !== undefined && (
+                    <p className="text-xs text-gray-400 mt-1 text-center">
+                      {stats?.state === 1 ? 'Election is already in progress' : 'Election has ended'}
+                    </p>
+                  )}
+                </div>
+
+                {/* End Election Button */}
+                <div>
+                  <button
+                    onClick={() => handleElectionAction('end')}
+                    disabled={stats?.state !== 1 || actionLoading !== null}
+                    className={`w-full px-4 py-2 rounded-xl font-medium transition-colors flex items-center justify-center gap-2 ${stats?.state === 1 && actionLoading === null
+                      ? "bg-red-600 text-white hover:bg-red-700"
+                      : "bg-gray-200 text-gray-400 cursor-not-allowed"
+                      }`}
+                  >
+                    {actionLoading === 'end' && <Loader2 className="w-4 h-4 animate-spin" />}
+                    {actionLoading === 'end' ? 'Ending...' : 'End Election'}
+                  </button>
+                  {stats?.state !== 1 && stats?.state !== undefined && (
+                    <p className="text-xs text-gray-400 mt-1 text-center">
+                      {stats?.state === 0 ? 'Start election first' : 'Election already ended'}
+                    </p>
+                  )}
+                </div>
 
                 {/* Start New Election Section (only when election is ended) */}
                 {stats?.state === 2 && (

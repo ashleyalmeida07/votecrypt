@@ -72,8 +72,27 @@ export function getWalletClient() {
     return createWalletClient({
         account,
         chain: detectedChain,
-        transport: http(RPC_URL),
+        transport: http(RPC_URL, {
+            batch: false,
+            retryCount: 0, // Don't retry - let us handle errors
+            fetchOptions: {
+                cache: 'no-store',
+            },
+        }),
     })
+}
+
+// Get next nonce (handles pending transactions)
+export async function getNextNonce(): Promise<number> {
+    if (!ADMIN_PRIVATE_KEY) throw new Error('ADMIN_PRIVATE_KEY not configured')
+
+    const account = privateKeyToAccount(ADMIN_PRIVATE_KEY)
+    const nonce = await publicClient.getTransactionCount({
+        address: account.address,
+        blockTag: 'pending', // Include pending transactions
+    })
+    console.log('📊 Next nonce:', nonce)
+    return nonce
 }
 
 // Get detected chain info for debugging

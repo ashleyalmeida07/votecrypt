@@ -6,6 +6,7 @@ import {
     getWalletClient,
     getElectionState,
     getElectionOfficial,
+    getNextNonce,
     ElectionState,
 } from '@/lib/contract'
 
@@ -109,13 +110,41 @@ export async function POST(request: Request) {
         } else {
             const functionName = action === 'start' ? 'startElection' : 'endElection'
             console.log(`Calling ${functionName}...`)
+
+            // First simulate to check for errors
+            try {
+                await publicClient.simulateContract({
+                    ...contractConfig,
+                    functionName,
+                    account: walletClient.account,
+                })
+                console.log('✅ Simulation passed')
+            } catch (simError: any) {
+                console.error('❌ Simulation failed:', simError.message)
+                return NextResponse.json({
+                    error: `Contract call would fail: ${simError.shortMessage || simError.message}`,
+                }, { status: 400 })
+            }
+
+            // Get current nonce to avoid conflicts
+            const nonce = await getNextNonce()
+
             hash = await walletClient.writeContract({
                 ...contractConfig,
                 functionName,
+                nonce,
             })
         }
 
         console.log('Transaction hash:', hash)
+
+        // Wait briefly to verify transaction was actually broadcast
+        try {
+            const txCheck = await publicClient.getTransaction({ hash })
+            console.log('✅ Transaction found on network, nonce:', txCheck.nonce)
+        } catch (e) {
+            console.log('⚠️ Transaction not yet visible on network (may still be pending)')
+        }
 
         // Return immediately without waiting for confirmation (non-blocking)
         const actionLabels: Record<string, string> = {
