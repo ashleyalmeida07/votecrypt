@@ -1,10 +1,11 @@
 "use client"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import type React from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { Shield, ArrowRight } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
+import { RecaptchaVerifier, auth } from "@/lib/firebase"
 import { toast } from "sonner"
 
 export default function VerifyPhonePage() {
@@ -15,13 +16,57 @@ export default function VerifyPhonePage() {
   const [confirmationResult, setConfirmationResult] = useState<any>(null)
   const { user, signInWithPhone } = useAuth()
   const router = useRouter()
+  const recaptchaVerifierRef = useRef<any>(null)
 
   useEffect(() => {
     // If user is not authenticated, redirect to login
     if (!user && !loading) {
       router.push("/login")
     }
+
+    return () => {
+      if (recaptchaVerifierRef.current) {
+        try {
+          recaptchaVerifierRef.current.clear()
+          recaptchaVerifierRef.current = null
+        } catch (error) {
+          console.log('Cleanup error (safe to ignore):', error)
+        }
+      }
+    }
   }, [user, router, loading])
+
+  // Initialize invisible reCAPTCHA on component mount
+  useEffect(() => {
+    if (!user || recaptchaVerifierRef.current) return
+
+    const initRecaptcha = async () => {
+      try {
+        const container = document.getElementById('recaptcha-container')
+        if (!container) return
+        container.innerHTML = ''
+
+        recaptchaVerifierRef.current = new RecaptchaVerifier(
+          auth,
+          'recaptcha-container',
+          {
+            size: 'invisible',
+            callback: () => {
+              console.log('reCAPTCHA solved automatically')
+            }
+          }
+        )
+
+        await recaptchaVerifierRef.current.render()
+        console.log('Invisible reCAPTCHA initialized')
+      } catch (error: any) {
+        console.error('Recaptcha initialization error:', error)
+        recaptchaVerifierRef.current = null
+      }
+    }
+
+    initRecaptcha()
+  }, [user])
 
   const handlePhoneSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -54,8 +99,10 @@ export default function VerifyPhonePage() {
       
       console.log('Formatted phone number:', formattedPhone)
       
-      // The RecaptchaVerifier should be ready at this point
-      // Firebase will handle the verification when signInWithPhone is called
+      if (!recaptchaVerifierRef.current) {
+        throw new Error('reCAPTCHA not initialized. Please refresh the page.')
+      }
+      
       const confirmation = await signInWithPhone(formattedPhone, recaptchaVerifierRef.current)
       setConfirmationResult(confirmation)
       setStep("otp")
@@ -167,7 +214,7 @@ export default function VerifyPhonePage() {
                 <p className="text-xs text-gray-500 mt-2">Enter your 10-digit Indian mobile number (e.g., +919876543210 or 9876543210)</p>
               </div>
 
-              <div ref={recaptchaContainerRef} id="recaptcha-container"></div>
+              <div id="recaptcha-container"></div>
 
               <button
                 type="submit"

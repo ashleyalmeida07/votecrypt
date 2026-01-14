@@ -77,6 +77,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!phoneNumber || typeof phoneNumber !== 'string') {
         throw new Error('Invalid phone number')
       }
+      if (!recaptchaVerifier) {
+        throw new Error('reCAPTCHA verifier is required')
+      }
       
       // Validate phone number format for India
       const phoneRegex = /^\+91[6-9]\d{9}$/
@@ -85,11 +88,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       
       console.log('Attempting to sign in with phone:', phoneNumber)
-      
-      // For testing without reCAPTCHA (development only)
-      // In production, you MUST use reCAPTCHA or App Check
-      throw new Error('Phone authentication requires reCAPTCHA verification. This feature needs Firebase App Check or reCAPTCHA to be properly configured for production use.')
-      
+      const confirmationResult = await signInWithPhoneNumber(auth, phoneNumber, recaptchaVerifier);
+      console.log('Phone sign-in successful')
+      return confirmationResult;
     } catch (error: any) {
       console.error('Error signing in with phone:', error);
       console.error('Error code:', error.code);
