@@ -39,9 +39,15 @@ export default function LandingPage() {
             </a>
             <Link
               href="/login"
+              className="text-gray-600 hover:text-slate-900 font-medium transition-colors"
+            >
+              Login
+            </Link>
+            <Link
+              href="/signup"
               className="bg-teal-500 hover:bg-teal-600 text-white font-semibold rounded-xl px-6 py-3 transition-all duration-200 active:scale-95"
             >
-              Vote Now
+              Sign Up
             </Link>
           </div>
         </div>

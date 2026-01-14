@@ -1,11 +1,68 @@
 "use client"
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { CheckCircle, Clock, LogOut, ChevronRight, AlertTriangle } from "lucide-react"
+import { useAuth } from "@/contexts/AuthContext"
+import { toast } from "sonner"
 
 export default function VoterDashboard() {
   const [selectedCandidate, setSelectedCandidate] = useState<string | null>(null)
   const [showConfirmation, setShowConfirmation] = useState(false)
   const [hasVoted, setHasVoted] = useState(false)
+  const [phoneVerified, setPhoneVerified] = useState<boolean | null>(null)
+  const { user, signOut } = useAuth()
+  const router = useRouter()
+
+  useEffect(() => {
+    const checkPhoneVerification = async () => {
+      if (!user) {
+        router.push('/login')
+        return
+      }
+
+      try {
+        const response = await fetch('/api/auth/check-phone', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ firebaseUid: user.uid })
+        })
+
+        const data = await response.json()
+        
+        if (!data.phoneVerified) {
+          toast.error('Please complete phone verification to access dashboard')
+          router.push('/verify-phone')
+          return
+        }
+        
+        setPhoneVerified(true)
+      } catch (error) {
+        console.error('Error checking phone verification:', error)
+        toast.error('Failed to verify authentication status')
+        router.push('/login')
+      }
+    }
+
+    checkPhoneVerification()
+  }, [user, router])
+
+  const handleSignOut = async () => {
+    try {
+      await signOut()
+      toast.success('Signed out successfully')
+      router.push('/')
+    } catch (error) {
+      toast.error('Failed to sign out')
+    }
+  }
+
+  if (!user || phoneVerified === null) {
+    return null // Loading or redirecting
+  }
+
+  if (!phoneVerified) {
+    return null // Redirecting to verify-phone
+  }
 
   const candidates = [
     { id: "1", name: "Alice Johnson", party: "Democratic Party", bio: "Education and climate advocate" },
@@ -29,7 +86,10 @@ export default function VoterDashboard() {
       <header className="bg-white border-b border-gray-200">
         <div className="ballot-container py-4 flex items-center justify-between">
           <h1 className="text-2xl font-bold text-slate-900">BALLOT Dashboard</h1>
-          <button className="text-gray-600 hover:text-slate-900 flex items-center gap-2 font-medium transition-colors">
+          <button 
+            onClick={handleSignOut}
+            className="text-gray-600 hover:text-slate-900 flex items-center gap-2 font-medium transition-colors"
+          >
             <LogOut className="w-4 h-4" />
             Logout
           </button>
