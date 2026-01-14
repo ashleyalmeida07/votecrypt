@@ -50,10 +50,7 @@ export default function VerifyPhonePage() {
       setConfirmationResult(data)
       toast.success("Verification code sent to your email")
       
-      // Show dev OTP in development (console only)
-      if (data.devOtp && process.env.NODE_ENV === 'development') {
-        console.log('Dev OTP:', data.devOtp)
-      }
+    
     } catch (error: any) {
       toast.error(error.message || "Failed to send verification code")
     } finally {
