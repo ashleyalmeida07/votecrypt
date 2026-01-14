@@ -29,3 +29,6 @@ next-env.d.ts
 # Solidity
 Solidity/artifacts
 backend/venv312/
+
+.venv
+backend/__pycache__
