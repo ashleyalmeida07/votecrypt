@@ -139,39 +139,83 @@
   }
 }
 
-/* BALLOT-specific utility classes - using ONLY proper Tailwind syntax */
-@layer components {
+/* BALLOT-specific utility classes - using proper CSS syntax */
+.ballot-container {
+  max-width: 80rem;
+  margin-left: auto;
+  margin-right: auto;
+  padding-left: 1rem;
+  padding-right: 1rem;
+}
+
+@media (min-width: 640px) {
   .ballot-container {
-    @apply max-w-7xl mx-auto px-4 sm:px-6 lg:px-8;
+    padding-left: 1.5rem;
+    padding-right: 1.5rem;
   }
+}
 
-  .ballot-card {
-    @apply bg-white rounded-2xl shadow-sm border border-gray-100 transition-all duration-300;
+@media (min-width: 1024px) {
+  .ballot-container {
+    padding-left: 2rem;
+    padding-right: 2rem;
   }
+}
 
-  .ballot-card-hover {
-    @apply hover:shadow-lg hover:border-gray-200;
-  }
+.ballot-card {
+  background-color: white;
+  border-radius: 1rem;
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  border: 1px solid rgb(243 244 246);
+  transition: all 0.3s;
+}
 
-  /* Input styling */
-  .ballot-input {
-    @apply w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent transition-all duration-200 bg-white text-slate-900 placeholder-gray-400;
-  }
+.ballot-card-hover:hover {
+  box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  border-color: rgb(229 231 235);
+}
 
-  /* Badge styling */
-  .ballot-badge {
-    @apply inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold;
-  }
+.ballot-input {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border: 1px solid rgb(209 213 219);
+  border-radius: 0.75rem;
+  transition: all 0.2s;
+  background-color: white;
+  color: rgb(15 23 42);
+}
 
-  .ballot-badge-success {
-    @apply ballot-badge bg-green-100 text-green-800;
-  }
+.ballot-input::placeholder {
+  color: rgb(156 163 175);
+}
 
-  .ballot-badge-warning {
-    @apply ballot-badge bg-amber-100 text-amber-800;
-  }
+.ballot-input:focus {
+  outline: none;
+  ring: 2px solid rgb(20 184 166);
+  border-color: transparent;
+}
 
-  .ballot-badge-info {
-    @apply ballot-badge bg-blue-100 text-blue-800;
-  }
+.ballot-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.ballot-badge-success {
+  background-color: rgb(220 252 231);
+  color: rgb(22 101 52);
+}
+
+.ballot-badge-warning {
+  background-color: rgb(254 243 199);
+  color: rgb(146 64 14);
+}
+
+.ballot-badge-info {
+  background-color: rgb(219 234 254);
+  color: rgb(30 64 175);
 }
