@@ -58,7 +58,7 @@ export default function AdminPanel() {
       <div className="ballot-container py-8">
         {/* Alert Banner */}
         <div className="ballot-card ballot-card-hover p-4 bg-blue-50 border-l-4 border-teal-500 mb-8 flex items-start gap-3">
-          <AlertCircle className="w-5 h-5 text-teal-600 flex-shrink-0 mt-0.5" />
+          <AlertCircle className="w-5 h-5 text-teal-600 shrink-0 mt-0.5" />
           <div>
             <h3 className="font-bold text-slate-900">Restricted Access</h3>
             <p className="text-sm text-gray-600">
@@ -187,7 +187,7 @@ export default function AdminPanel() {
                   return (
                     <div key={idx} className="p-4 bg-slate-100 rounded-xl border border-gray-200">
                       <div className="flex items-start gap-3">
-                        <Icon className="w-5 h-5 text-teal-600 flex-shrink-0 mt-1" />
+                      <Icon className="w-5 h-5 text-teal-600 shrink-0 mt-1" />
                         <div>
                           <p className="text-xs text-gray-600 mb-1">{stat.label}</p>
                           <p className="text-xl font-bold text-slate-900">{stat.value}</p>
@@ -257,7 +257,7 @@ export default function AdminPanel() {
                 {["Election started", "Results page enabled", "Verification system online", "First vote received"].map(
                   (action, idx) => (
                     <div key={idx} className="flex items-start gap-2 text-gray-600">
-                      <CheckCircle className="w-4 h-4 text-green-500 flex-shrink-0 mt-0.5" />
+                      <CheckCircle className="w-4 h-4 text-green-500 shrink-0 mt-0.5" />
                       <span>{action}</span>
                     </div>
                   ),
@@ -293,7 +293,7 @@ function AdminLoginPage({
   setPassword: (pwd: string) => void
 }) {
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-linear-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="text-center mb-8">

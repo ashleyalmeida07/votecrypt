@@ -9,41 +9,13 @@ export default function VoterDashboard() {
   const [selectedCandidate, setSelectedCandidate] = useState<string | null>(null)
   const [showConfirmation, setShowConfirmation] = useState(false)
   const [hasVoted, setHasVoted] = useState(false)
-  const [phoneVerified, setPhoneVerified] = useState<boolean | null>(null)
   const { user, signOut } = useAuth()
   const router = useRouter()
 
   useEffect(() => {
-    const checkPhoneVerification = async () => {
-      if (!user) {
-        router.push('/login')
-        return
-      }
-
-      try {
-        const response = await fetch('/api/auth/check-phone', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ firebaseUid: user.uid })
-        })
-
-        const data = await response.json()
-        
-        if (!data.phoneVerified) {
-          toast.error('Please complete phone verification to access dashboard')
-          router.push('/verify-phone')
-          return
-        }
-        
-        setPhoneVerified(true)
-      } catch (error) {
-        console.error('Error checking phone verification:', error)
-        toast.error('Failed to verify authentication status')
-        router.push('/login')
-      }
+    if (!user) {
+      router.push('/login')
     }
-
-    checkPhoneVerification()
   }, [user, router])
 
   const handleSignOut = async () => {
@@ -56,12 +28,8 @@ export default function VoterDashboard() {
     }
   }
 
-  if (!user || phoneVerified === null) {
+  if (!user) {
     return null // Loading or redirecting
-  }
-
-  if (!phoneVerified) {
-    return null // Redirecting to verify-phone
   }
 
   const candidates = [
@@ -86,13 +54,30 @@ export default function VoterDashboard() {
       <header className="bg-white border-b border-gray-200">
         <div className="ballot-container py-4 flex items-center justify-between">
           <h1 className="text-2xl font-bold text-slate-900">BALLOT Dashboard</h1>
-          <button 
-            onClick={handleSignOut}
-            className="text-gray-600 hover:text-slate-900 flex items-center gap-2 font-medium transition-colors"
-          >
-            <LogOut className="w-4 h-4" />
-            Logout
-          </button>
+          <div className="flex items-center gap-4">
+            {user?.displayName && (
+              <div className="flex items-center gap-2">
+                <div className="text-right">
+                  <p className="text-sm font-semibold text-slate-900">{user.displayName}</p>
+                  <p className="text-xs text-gray-600">{user.email}</p>
+                </div>
+                {user.photoURL && (
+                  <img 
+                    src={user.photoURL} 
+                    alt={user.displayName} 
+                    className="w-10 h-10 rounded-full border-2 border-teal-500"
+                  />
+                )}
+              </div>
+            )}
+            <button 
+              onClick={handleSignOut}
+              className="text-gray-600 hover:text-slate-900 flex items-center gap-2 font-medium transition-colors"
+            >
+              <LogOut className="w-4 h-4" />
+              Logout
+            </button>
+          </div>
         </div>
       </header>
 
@@ -148,7 +133,7 @@ export default function VoterDashboard() {
                         <p className="text-sm text-gray-500">{candidate.bio}</p>
                       </div>
                       <div
-                        className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ml-4 ${
+                        className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ml-4 ${
                           selectedCandidate === candidate.id ? "border-teal-500 bg-teal-500" : "border-gray-300"
                         }`}
                       >
@@ -180,7 +165,7 @@ export default function VoterDashboard() {
             {/* Important Notice */}
             <div className="ballot-card ballot-card-hover p-6 mb-6 border-l-4 border-amber-500">
               <div className="flex gap-3 mb-4">
-                <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0" />
+                <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
                 <h3 className="font-bold text-slate-900">Important Notice</h3>
               </div>
               <ul className="text-sm text-gray-600 space-y-2">
@@ -211,7 +196,7 @@ export default function VoterDashboard() {
                 ].map((item, idx) => (
                   <div key={idx} className="flex items-center gap-3">
                     <item.icon
-                      className={`w-5 h-5 flex-shrink-0 ${item.completed ? "text-green-500" : "text-gray-400"}`}
+                      className={`w-5 h-5 shrink-0 ${item.completed ? "text-green-500" : "text-gray-400"}`}
                     />
                     <span className={item.completed ? "text-gray-600" : "text-gray-400"}>{item.step}</span>
                   </div>

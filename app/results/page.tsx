@@ -215,7 +215,7 @@ export default function ResultsPage() {
             </div>
 
             {/* Verification Badge */}
-            <div className="ballot-card ballot-card-hover p-6 bg-gradient-to-br from-teal-50 to-transparent border border-teal-200">
+            <div className="ballot-card ballot-card-hover p-6 bg-linear-to-br from-teal-50 to-transparent border border-teal-200">
               <div className="flex justify-center mb-4">
                 <BarChart3 className="w-8 h-8 text-teal-600" />
               </div>
@@ -248,15 +248,15 @@ export default function ResultsPage() {
             <h3 className="font-bold text-slate-900 mb-3">Transparency Features</h3>
             <ul className="space-y-2 text-sm text-gray-600">
               <li className="flex gap-2">
-                <CheckCircle className="w-4 h-4 text-green-500 flex-shrink-0" />
+                <CheckCircle className="w-4 h-4 text-green-500 shrink-0" />
                 Real-time vote counting
               </li>
               <li className="flex gap-2">
-                <CheckCircle className="w-4 h-4 text-green-500 flex-shrink-0" />
+                <CheckCircle className="w-4 h-4 text-green-500 shrink-0" />
                 Blockchain verification
               </li>
               <li className="flex gap-2">
-                <CheckCircle className="w-4 h-4 text-green-500 flex-shrink-0" />
+                <CheckCircle className="w-4 h-4 text-green-500 shrink-0" />
                 Cryptographic proof
               </li>
             </ul>
@@ -264,7 +264,7 @@ export default function ResultsPage() {
         </div>
 
         {/* CTA */}
-        <div className="bg-gradient-to-r from-slate-900 to-slate-800 text-white rounded-2xl p-8 text-center">
+        <div className="bg-linear-to-r from-slate-900 to-slate-800 text-white rounded-2xl p-8 text-center">
           <h2 className="text-2xl font-bold mb-3">Haven't Voted Yet?</h2>
           <p className="mb-6 text-gray-100">Cast your vote securely and transparently. Your voice matters.</p>
           <Link

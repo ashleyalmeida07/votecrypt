@@ -6,8 +6,7 @@ export interface User {
   email: string;
   display_name: string | null;
   photo_url: string | null;
-  phone_number: string | null;
-  phone_verified: boolean;
+  email_verified: boolean;
   created_at: Date;
   updated_at: Date;
 }
@@ -28,7 +27,7 @@ export async function createOrUpdateUser(
   photoUrl: string | null
 ): Promise<User> {
   const result = await sql`
-    INSERT INTO users (firebase_uid, email, display_name, photo_url, phone_verified)
+    INSERT INTO users (firebase_uid, email, display_name, photo_url, email_verified)
     VALUES (${firebaseUid}, ${email}, ${displayName}, ${photoUrl}, false)
     ON CONFLICT (firebase_uid) 
     DO UPDATE SET 
@@ -42,14 +41,12 @@ export async function createOrUpdateUser(
   return result.rows[0] as User;
 }
 
-export async function updatePhoneVerification(
-  firebaseUid: string,
-  phoneNumber: string
+export async function updateEmailVerification(
+  firebaseUid: string
 ): Promise<User> {
   const result = await sql`
     UPDATE users 
-    SET phone_number = ${phoneNumber}, 
-        phone_verified = true,
+    SET email_verified = true,
         updated_at = CURRENT_TIMESTAMP
     WHERE firebase_uid = ${firebaseUid}
     RETURNING *

@@ -49,7 +49,7 @@ export default function SignUpPage() {
 
           <div className="mb-4 p-4 bg-blue-50 rounded-xl border border-blue-100">
             <p className="text-sm text-blue-900">
-              <strong>🔒 2-Step Verification:</strong> Sign up with Google, then verify your phone number
+              <strong>🔒 2-Step Verification:</strong> Sign up with Google, then verify your email
             </p>
           </div>
 
