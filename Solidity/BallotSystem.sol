@@ -93,6 +93,24 @@ contract BallotSystem {
     }
 
     /**
+     * @dev Starts a new election with a new name.
+     * WARNING: This clears all candidates and vote data!
+     * @param _newName The name for the new election
+     */
+    function startNewElection(string memory _newName) public onlyOfficial {
+        // Set new election name
+        electionName = _newName;
+        
+        // Reset state to Created
+        electionState = State.Created;
+        
+        // Clear all candidates
+        delete candidates;
+        
+        emit ElectionStateChanged(State.Created);
+    }
+
+    /**
      * @dev Registers a voter. This is called by your Python/Node.js backend 
      * AFTER the AI Face Detection validates the ID.
      */

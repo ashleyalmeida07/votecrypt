@@ -5,6 +5,7 @@ import {
     getElectionOfficial,
     getAllCandidates,
     ElectionState,
+    getChainInfo,
 } from '@/lib/contract'
 
 // GET: Get election dashboard stats
@@ -18,6 +19,7 @@ export async function GET() {
         ])
 
         const totalVotes = candidates.reduce((sum, c) => sum + c.voteCount, 0)
+        const chainInfo = getChainInfo()
 
         return NextResponse.json({
             electionName,
@@ -28,6 +30,10 @@ export async function GET() {
             totalVotes,
             candidates,
             contractAddress: process.env.CONTRACT_ADDR,
+            // Chain info for debugging
+            chain: chainInfo.name,
+            chainId: chainInfo.id,
+            blockExplorer: chainInfo.blockExplorer,
         })
     } catch (error) {
         console.error('Error fetching election stats:', error)

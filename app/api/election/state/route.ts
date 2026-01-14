@@ -27,14 +27,22 @@ export async function GET() {
     }
 }
 
-// POST: Change election state (start/end)
+// POST: Change election state (start/end/newElection)
 export async function POST(request: Request) {
     try {
-        const { action } = await request.json()
+        const { action, newName } = await request.json()
 
-        if (!['start', 'end'].includes(action)) {
+        if (!['start', 'end', 'newElection'].includes(action)) {
             return NextResponse.json(
-                { error: 'Invalid action. Use "start" or "end"' },
+                { error: 'Invalid action. Use "start", "end", or "newElection"' },
+                { status: 400 }
+            )
+        }
+
+        // Validate newName for newElection action
+        if (action === 'newElection' && (!newName || newName.trim() === '')) {
+            return NextResponse.json(
+                { error: 'New election name is required' },
                 { status: 400 }
             )
         }
@@ -81,47 +89,47 @@ export async function POST(request: Request) {
                 currentState,
             }, { status: 400 })
         }
+        if (action === 'newElection' && currentState !== 2) {
+            return NextResponse.json({
+                error: `Cannot start new election. Current election must be ended first. Current state: "${ElectionState[currentState as keyof typeof ElectionState]}"`,
+                currentState,
+            }, { status: 400 })
+        }
 
         const walletClient = getWalletClient()
-        const functionName = action === 'start' ? 'startElection' : 'endElection'
+        let hash: `0x${string}`
 
-        console.log(`Calling ${functionName}...`)
-
-        const hash = await walletClient.writeContract({
-            ...contractConfig,
-            functionName,
-        })
+        if (action === 'newElection') {
+            console.log(`Calling startNewElection with name: ${newName}...`)
+            hash = await walletClient.writeContract({
+                ...contractConfig,
+                functionName: 'startNewElection',
+                args: [newName],
+            })
+        } else {
+            const functionName = action === 'start' ? 'startElection' : 'endElection'
+            console.log(`Calling ${functionName}...`)
+            hash = await walletClient.writeContract({
+                ...contractConfig,
+                functionName,
+            })
+        }
 
         console.log('Transaction hash:', hash)
 
-        // Try to wait for confirmation with extended timeout (5 minutes)
-        let receipt = null
-        let newState = null
-
-        try {
-            receipt = await publicClient.waitForTransactionReceipt({
-                hash,
-                timeout: 300_000, // 5 minutes
-            })
-            console.log('Transaction confirmed in block:', receipt.blockNumber)
-            newState = await getElectionState()
-            console.log('New state:', newState, ElectionState[newState as keyof typeof ElectionState])
-        } catch (waitError: any) {
-            console.log('Transaction submitted, confirmation pending:', hash)
-            return NextResponse.json({
-                success: true,
-                pending: true,
-                transactionHash: hash,
-                message: 'Transaction submitted! Confirmation is pending. Check block explorer for status.',
-            })
+        // Return immediately without waiting for confirmation (non-blocking)
+        const actionLabels: Record<string, string> = {
+            start: 'Election start',
+            end: 'Election end',
+            newElection: 'New election creation'
         }
 
         return NextResponse.json({
             success: true,
+            pending: true,
             transactionHash: hash,
-            blockNumber: receipt ? Number(receipt.blockNumber) : null,
-            newState,
-            newStateName: newState !== null ? ElectionState[newState as keyof typeof ElectionState] : null,
+            message: `${actionLabels[action]} submitted! Transaction pending confirmation.`,
+            explorerUrl: `https://sepolia.etherscan.io/tx/${hash}`,
         })
     } catch (error: any) {
         console.error('Error changing election state:', error)

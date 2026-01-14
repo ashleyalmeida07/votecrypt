@@ -43,30 +43,26 @@ export async function POST(request: Request) {
             args: [address as `0x${string}`],
         })
 
-        // Try to wait for confirmation with extended timeout
-        let receipt = null
+        console.log('Voter registration hash:', hash)
 
+        // Store voter in Neon DB (non-blocking)
         try {
-            receipt = await publicClient.waitForTransactionReceipt({
-                hash,
-                timeout: 300_000, // 5 minutes
-            })
-        } catch (waitError: any) {
-            console.log('Transaction submitted, confirmation pending:', hash)
-            return NextResponse.json({
-                success: true,
-                pending: true,
-                transactionHash: hash,
-                message: 'Voter registration submitted! Confirmation pending.',
-                registeredAddress: address,
-            })
+            const { registerVoterInDb, logTransaction } = await import('@/lib/db')
+            await registerVoterInDb(address, hash)
+            await logTransaction('registerVoter', hash, { address })
+            console.log('✅ Voter saved to Neon DB')
+        } catch (dbError: any) {
+            console.error('⚠️ Failed to save voter to DB:', dbError.message)
         }
 
+        // Return immediately without waiting for confirmation (non-blocking)
         return NextResponse.json({
             success: true,
+            pending: true,
             transactionHash: hash,
-            blockNumber: receipt ? Number(receipt.blockNumber) : null,
+            message: 'Voter registration submitted! Transaction pending confirmation.',
             registeredAddress: address,
+            explorerUrl: `https://sepolia.etherscan.io/tx/${hash}`,
         })
     } catch (error: any) {
         console.error('Error registering voter:', error)

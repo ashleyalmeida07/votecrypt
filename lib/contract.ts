@@ -1,4 +1,4 @@
-import { createPublicClient, createWalletClient, http, defineChain } from 'viem'
+import { createPublicClient, createWalletClient, http, Chain } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 import { sepolia, mainnet, polygon, arbitrum, arbitrumSepolia, polygonAmoy, baseSepolia, base } from 'viem/chains'
 import abi from '@/Solidity/abi.json'
@@ -8,8 +8,8 @@ const RPC_URL = process.env.RPC_URL!
 const CONTRACT_ADDR = process.env.CONTRACT_ADDR as `0x${string}`
 const ADMIN_PRIVATE_KEY = process.env.ADMIN_PRIVATE_KEY as `0x${string}` | undefined
 
-// All supported chains
-const SUPPORTED_CHAINS: Record<number, any> = {
+// All supported chains by chain ID
+const SUPPORTED_CHAINS: Record<number, Chain> = {
     1: mainnet,
     11155111: sepolia,
     137: polygon,
@@ -20,42 +20,71 @@ const SUPPORTED_CHAINS: Record<number, any> = {
     84532: baseSepolia,
 }
 
-// Detect chain from RPC URL keywords (fallback)
-function detectChainFromUrl(rpcUrl: string) {
+// Detect chain from RPC URL keywords
+function detectChainFromUrl(rpcUrl: string): Chain {
     const url = rpcUrl.toLowerCase()
-    if (url.includes('mainnet') && !url.includes('sepolia')) return mainnet
-    if (url.includes('polygon') && url.includes('amoy')) return polygonAmoy
-    if (url.includes('polygon') || url.includes('matic')) return polygon
-    if (url.includes('arb') && url.includes('sepolia')) return arbitrumSepolia
-    if (url.includes('arb')) return arbitrum
-    if (url.includes('base') && url.includes('sepolia')) return baseSepolia
-    if (url.includes('base')) return base
-    if (url.includes('sepolia')) return sepolia
-    return sepolia // Default fallback
+
+    // Check for specific network patterns in Alchemy/Infura URLs
+    if (url.includes('eth-mainnet') || (url.includes('mainnet') && !url.includes('sepolia'))) return mainnet
+    if (url.includes('eth-sepolia') || url.includes('sepolia')) return sepolia
+    if (url.includes('polygon-mainnet') || (url.includes('polygon') && !url.includes('amoy'))) return polygon
+    if (url.includes('polygon-amoy') || url.includes('amoy')) return polygonAmoy
+    if (url.includes('arb-mainnet') || (url.includes('arbitrum') && !url.includes('sepolia'))) return arbitrum
+    if (url.includes('arb-sepolia') || (url.includes('arbitrum') && url.includes('sepolia'))) return arbitrumSepolia
+    if (url.includes('base-mainnet') || (url.includes('base') && !url.includes('sepolia'))) return base
+    if (url.includes('base-sepolia')) return baseSepolia
+
+    console.warn('⚠️ Could not detect chain from RPC URL, defaulting to Sepolia')
+    return sepolia
 }
 
-// Use URL-based detection for initial setup
+// Detect chain
 const detectedChain = detectChainFromUrl(RPC_URL)
+console.log('🔗 Detected chain:', detectedChain.name, '(Chain ID:', detectedChain.id, ')')
+console.log('📍 RPC URL:', RPC_URL.replace(/[a-zA-Z0-9]{20,}/, '[API_KEY]'))
+console.log('📜 Contract:', CONTRACT_ADDR)
 
-// Public client for read operations (no private key needed)
+// Public client for read operations
 export const publicClient = createPublicClient({
     chain: detectedChain,
     transport: http(RPC_URL),
 })
 
-// Wallet client for write operations (requires private key)
+// Verify chain ID on first load
+publicClient.getChainId().then(chainId => {
+    console.log('✅ RPC Chain ID:', chainId)
+    if (chainId !== detectedChain.id) {
+        console.error('❌ CHAIN MISMATCH! RPC returns chain ID', chainId, 'but we configured', detectedChain.id)
+    }
+}).catch(err => {
+    console.error('❌ Failed to get chain ID:', err.message)
+})
+
+// Wallet client for write operations
 export function getWalletClient() {
     if (!ADMIN_PRIVATE_KEY) {
         throw new Error('ADMIN_PRIVATE_KEY not configured')
     }
 
     const account = privateKeyToAccount(ADMIN_PRIVATE_KEY)
+    console.log('🔑 Using wallet:', account.address)
 
     return createWalletClient({
         account,
         chain: detectedChain,
         transport: http(RPC_URL),
     })
+}
+
+// Get detected chain info for debugging
+export function getChainInfo() {
+    return {
+        name: detectedChain.name,
+        id: detectedChain.id,
+        rpcUrl: RPC_URL.replace(/[a-zA-Z0-9]{20,}/, '[API_KEY]'),
+        contractAddress: CONTRACT_ADDR,
+        blockExplorer: detectedChain.blockExplorers?.default?.url || 'Unknown',
+    }
 }
 
 // Contract configuration

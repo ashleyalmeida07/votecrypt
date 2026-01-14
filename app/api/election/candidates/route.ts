@@ -1,10 +1,13 @@
 import { NextResponse } from 'next/server'
+import { privateKeyToAccount } from 'viem/accounts'
 import {
     publicClient,
     contractConfig,
     getWalletClient,
     getAllCandidates,
     getElectionState,
+    getElectionOfficial,
+    ElectionState,
 } from '@/lib/contract'
 
 // GET: Get all candidates
@@ -42,45 +45,65 @@ export async function POST(request: Request) {
         // Check election state
         const state = await getElectionState()
         if (state !== 0) {
+            return NextResponse.json({
+                error: `Can only add candidates before election starts. Current state: "${ElectionState[state as keyof typeof ElectionState]}"`,
+            }, { status: 400 })
+        }
+
+        // Verify admin wallet
+        const adminKey = process.env.ADMIN_PRIVATE_KEY as `0x${string}`
+        if (!adminKey) {
             return NextResponse.json(
-                { error: 'Can only add candidates before election starts (state must be Created)' },
-                { status: 400 }
+                { error: 'ADMIN_PRIVATE_KEY not configured' },
+                { status: 500 }
             )
+        }
+
+        const adminAccount = privateKeyToAccount(adminKey)
+        const adminAddress = adminAccount.address.toLowerCase()
+        const electionOfficial = await getElectionOfficial()
+        const officialAddress = electionOfficial.toLowerCase()
+
+        console.log('Adding candidate:', name, party)
+        console.log('Admin address:', adminAddress)
+        console.log('Election official:', officialAddress)
+
+        if (adminAddress !== officialAddress) {
+            return NextResponse.json({
+                error: 'Admin wallet does not match election official',
+                adminAddress,
+                electionOfficial: officialAddress,
+            }, { status: 403 })
         }
 
         const walletClient = getWalletClient()
 
+        console.log('Calling addCandidate...')
         const hash = await walletClient.writeContract({
             ...contractConfig,
             functionName: 'addCandidate',
             args: [name, party],
         })
 
-        // Try to wait for confirmation with extended timeout
-        let receipt = null
-        let candidates = null
+        console.log('Transaction hash:', hash)
 
+        // Store candidate in Neon DB (non-blocking)
         try {
-            receipt = await publicClient.waitForTransactionReceipt({
-                hash,
-                timeout: 300_000, // 5 minutes
-            })
-            candidates = await getAllCandidates()
-        } catch (waitError: any) {
-            console.log('Transaction submitted, confirmation pending:', hash)
-            return NextResponse.json({
-                success: true,
-                pending: true,
-                transactionHash: hash,
-                message: 'Candidate addition submitted! Confirmation pending.',
-            })
+            const { addCandidateToDb, logTransaction } = await import('@/lib/db')
+            await addCandidateToDb(name, party, hash)
+            await logTransaction('addCandidate', hash, { name, party })
+            console.log('✅ Candidate saved to Neon DB')
+        } catch (dbError: any) {
+            console.error('⚠️ Failed to save to DB (blockchain tx still submitted):', dbError.message)
         }
 
+        // Return immediately without waiting for confirmation (non-blocking)
         return NextResponse.json({
             success: true,
+            pending: true,
             transactionHash: hash,
-            blockNumber: receipt ? Number(receipt.blockNumber) : null,
-            candidates,
+            message: `Candidate "${name}" submitted! Transaction pending confirmation.`,
+            explorerUrl: `https://sepolia.etherscan.io/tx/${hash}`,
         })
     } catch (error: any) {
         console.error('Error adding candidate:', error)

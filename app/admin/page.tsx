@@ -36,6 +36,7 @@ export default function AdminPanel() {
   const [newCandidateName, setNewCandidateName] = useState("")
   const [newCandidateParty, setNewCandidateParty] = useState("")
   const [voterAddress, setVoterAddress] = useState("")
+  const [newElectionName, setNewElectionName] = useState("")
 
   const fetchStats = useCallback(async () => {
     try {
@@ -69,13 +70,23 @@ export default function AdminPanel() {
     }
   }
 
-  const handleElectionAction = async (action: "start" | "end") => {
+  const handleElectionAction = async (action: "start" | "end" | "newElection") => {
     setActionLoading(action)
     try {
+      const body: { action: string; newName?: string } = { action }
+      if (action === 'newElection') {
+        if (!newElectionName.trim()) {
+          toast.error('Please enter a name for the new election')
+          setActionLoading(null)
+          return
+        }
+        body.newName = newElectionName.trim()
+      }
+
       const res = await fetch('/api/election/state', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action }),
+        body: JSON.stringify(body),
       })
 
       const data = await res.json()
@@ -88,16 +99,22 @@ export default function AdminPanel() {
           duration: 10000,
         })
       } else {
-        toast.success(`Election ${action === 'start' ? 'started' : 'ended'} successfully!`, {
+        const actionLabels: Record<string, string> = { start: 'started', end: 'ended', newElection: 'created' }
+        toast.success(`Election ${actionLabels[action]} successfully!`, {
           description: `Transaction: ${data.transactionHash.slice(0, 10)}...`,
         })
+      }
+
+      // Clear new election name input
+      if (action === 'newElection') {
+        setNewElectionName('')
       }
 
       // Refresh stats after a delay to allow blockchain to update
       setTimeout(() => fetchStats(), 5000)
       await fetchStats()
     } catch (error: any) {
-      toast.error(`Failed to ${action} election`, {
+      toast.error(`Failed to ${action === 'newElection' ? 'start new' : action} election`, {
         description: error.message,
       })
     } finally {
@@ -440,6 +457,35 @@ export default function AdminPanel() {
                   {actionLoading === 'end' && <Loader2 className="w-4 h-4 animate-spin" />}
                   End Election
                 </button>
+
+                {/* Start New Election Section (only when election is ended) */}
+                {stats?.state === 2 && (
+                  <div className="pt-4 mt-4 border-t border-gray-200">
+                    <p className="text-xs text-gray-600 mb-3">Start a new election cycle:</p>
+                    <input
+                      type="text"
+                      value={newElectionName}
+                      onChange={(e) => setNewElectionName(e.target.value)}
+                      placeholder="New election name..."
+                      className="ballot-input mb-2 text-sm"
+                      disabled={actionLoading !== null}
+                    />
+                    <button
+                      onClick={() => handleElectionAction('newElection')}
+                      disabled={!newElectionName.trim() || actionLoading !== null}
+                      className={`w-full px-4 py-2 rounded-xl font-medium transition-colors flex items-center justify-center gap-2 ${newElectionName.trim() && actionLoading === null
+                        ? "bg-teal-600 text-white hover:bg-teal-700"
+                        : "bg-gray-200 text-gray-400 cursor-not-allowed"
+                        }`}
+                    >
+                      {actionLoading === 'newElection' && <Loader2 className="w-4 h-4 animate-spin" />}
+                      Start New Election
+                    </button>
+                    <p className="text-xs text-amber-600 mt-2">
+                      ⚠️ This will clear all candidates and votes
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
 
