@@ -133,6 +133,25 @@ export async function getNextNonce(): Promise<number> {
     return nonce
 }
 
+// Helper: Get transaction receipt (for block number, status, etc.)
+export async function getTransactionReceipt(hash: `0x${string}`) {
+    try {
+        const receipt = await publicClient.waitForTransactionReceipt({
+            hash,
+            confirmations: 1,
+            timeout: 60_000, // 60 second timeout
+        })
+        return {
+            blockNumber: Number(receipt.blockNumber),
+            status: receipt.status,
+            gasUsed: Number(receipt.gasUsed),
+        }
+    } catch (error) {
+        console.error('Failed to get receipt:', error)
+        return null
+    }
+}
+
 // Get detected chain info for debugging
 export function getChainInfo() {
     return {

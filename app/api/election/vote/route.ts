@@ -8,6 +8,7 @@ import {
     writeContractWithRetry,
     getMappedAddress,
     getVoterOnChain,
+    getTransactionReceipt,
 } from '@/lib/contract'
 import { sql, getVoterByFirebaseUid, logTransaction, getUserByFirebaseUid } from '@/lib/db'
 
@@ -119,20 +120,45 @@ export async function POST(request: Request) {
             })
 
             // Update candidate count in DB too (write-through)
-            // Use the blockchain ID if possible, but here we assume candidateId IS the blockchainId
-            await sql`
-                UPDATE candidates 
-                SET vote_count = vote_count + 1, updated_at = CURRENT_TIMESTAMP
-                WHERE blockchain_id = ${candidateId}
-            `
+            // Scope by election_id to avoid updating old election candidates
+            const latestElection = await sql`SELECT id FROM elections ORDER BY id DESC LIMIT 1`
+            const electionId = latestElection.length > 0 ? latestElection[0].id : null
+
+            if (electionId !== null) {
+                await sql`
+                    UPDATE candidates 
+                    SET vote_count = vote_count + 1, updated_at = CURRENT_TIMESTAMP
+                    WHERE blockchain_id = ${candidateId} AND election_id = ${electionId}
+                `
+            } else {
+                await sql`
+                    UPDATE candidates 
+                    SET vote_count = vote_count + 1, updated_at = CURRENT_TIMESTAMP
+                    WHERE blockchain_id = ${candidateId} AND election_id IS NULL
+                `
+            }
 
         } catch (dbError: any) {
             console.error('Failed to update DB:', dbError)
         }
 
+        // Get transaction receipt for block number (don't block response if it takes too long)
+        let blockNumber = null
+        let timestamp = new Date().toISOString()
+        try {
+            const receipt = await getTransactionReceipt(hash as `0x${string}`)
+            if (receipt) {
+                blockNumber = receipt.blockNumber
+            }
+        } catch (e) {
+            console.log('Receipt fetch skipped:', e)
+        }
+
         return NextResponse.json({
             success: true,
-            transactionHash: hash
+            transactionHash: hash,
+            blockNumber,
+            timestamp
         })
 
     } catch (error: any) {

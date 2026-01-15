@@ -1,7 +1,7 @@
 "use client"
 import { useState, useEffect } from "react"
 import Link from "next/link"
-import { Shield, RefreshCw, CheckCircle, BarChart3 } from "lucide-react"
+import { Shield, RefreshCw, CheckCircle, BarChart3, Trophy } from "lucide-react"
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts"
 
 export default function ResultsPage() {
@@ -11,6 +11,8 @@ export default function ResultsPage() {
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
   const [autoRefresh, setAutoRefresh] = useState(true)
+  const [winner, setWinner] = useState<any>(null)
+  const [isEnded, setIsEnded] = useState(false)
 
   const fetchResults = async () => {
     try {
@@ -23,6 +25,8 @@ export default function ResultsPage() {
           totalVotes: data.totalVotes,
           lastUpdated: new Date(data.lastUpdated)
         })
+        setWinner(data.winner)
+        setIsEnded(data.isEnded || false)
       }
     } catch (error) {
       console.error("Failed to fetch results:", error)
@@ -118,6 +122,43 @@ export default function ResultsPage() {
             {syncing ? "Verifying with Blockchain..." : "Verify & Refresh Results"}
           </button>
         </div>
+
+        {/* Winner Banner - Show when election is ended */}
+        {isEnded && winner && (
+          <div className="mb-12 relative overflow-hidden">
+            <div className="bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-500 rounded-2xl p-8 text-center shadow-2xl">
+              <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48Y2lyY2xlIGN4PSIyMCIgY3k9IjIwIiByPSIyIiBmaWxsPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMikiLz48L3N2Zz4=')] opacity-50"></div>
+              <div className="relative">
+                <Trophy className="w-16 h-16 text-white mx-auto mb-4 drop-shadow-lg" />
+                <h2 className="text-3xl font-bold text-white mb-2 drop-shadow">
+                  🎉 Election Winner 🎉
+                </h2>
+                {winner.isTie ? (
+                  <>
+                    <p className="text-xl text-white/90 mb-4">It's a tie between {winner.tiedCandidates} candidates!</p>
+                    <div className="flex flex-wrap justify-center gap-4">
+                      {winner.names?.map((name: string, idx: number) => (
+                        <div key={idx} className="bg-white/20 backdrop-blur rounded-xl px-6 py-3">
+                          <p className="text-2xl font-bold text-white">{name}</p>
+                          <p className="text-white/80">{winner.parties?.[idx]}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-4xl font-bold text-white mb-2 drop-shadow">{winner.name}</p>
+                    <p className="text-xl text-white/90 mb-4">{winner.party}</p>
+                    <div className="inline-flex items-center gap-4 bg-white/20 backdrop-blur rounded-full px-6 py-3">
+                      <span className="text-white font-bold">{winner.votes?.toLocaleString()} votes</span>
+                      <span className="text-white/80">({winner.percentage}%)</span>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Top Stats */}
         <div className="grid md:grid-cols-4 gap-6 mb-12">

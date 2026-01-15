@@ -16,6 +16,8 @@ export default function VoterDashboard() {
   const [hasVoted, setHasVoted] = useState(false)
   const [votedFor, setVotedFor] = useState<number | null>(null)
   const [transactionHash, setTransactionHash] = useState<string | null>(null)
+  const [blockNumber, setBlockNumber] = useState<number | null>(null)
+  const [voteTimestamp, setVoteTimestamp] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
 
@@ -81,9 +83,26 @@ export default function VoterDashboard() {
   }
 
   const handleVoteSubmit = async () => {
-    // Determine the correct ID to send (prefer blockchain_id if available)
+    // Find the selected candidate
     const candidate = candidates.find(c => c.id === selectedCandidate)
     if (!candidate || !user) return
+
+    // CRITICAL: Use blockchainId, NOT the database id (database IDs like 9 are invalid on chain)
+    const blockchainId = candidate.blockchainId
+
+    console.log('Vote submission debug:', {
+      selectedCandidate,
+      candidateDbId: candidate.id,
+      candidateBlockchainId: candidate.blockchainId,
+      candidateName: candidate.name,
+      usingId: blockchainId
+    })
+
+    // Validate blockchainId exists
+    if (blockchainId === undefined || blockchainId === null) {
+      toast.error(`Candidate "${candidate.name}" has no blockchain ID. Please sync the database.`)
+      return
+    }
 
     setSubmitting(true)
     try {
@@ -91,7 +110,7 @@ export default function VoterDashboard() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          candidateId: candidate.blockchainId || candidate.id, // Use the ID the contract expects
+          candidateId: blockchainId, // Always use blockchain ID, never database ID
           firebaseUid: user.uid,
           candidateName: candidate.name
         })
@@ -101,6 +120,8 @@ export default function VoterDashboard() {
 
       if (res.ok) {
         setTransactionHash(data.transactionHash)
+        setBlockNumber(data.blockNumber)
+        setVoteTimestamp(data.timestamp)
         setHasVoted(true)
         setShowConfirmation(false)
         toast.success("Vote submitted successfully!")
@@ -116,7 +137,7 @@ export default function VoterDashboard() {
   }
 
   if (hasVoted) {
-    return <VoteConfirmationScreen txHash={transactionHash} />
+    return <VoteConfirmationScreen txHash={transactionHash} blockNumber={blockNumber} timestamp={voteTimestamp} />
   }
 
   return (
@@ -355,7 +376,11 @@ function VoteConfirmationModal({
   )
 }
 
-function VoteConfirmationScreen({ txHash }: { txHash: string | null }) {
+function VoteConfirmationScreen({ txHash, blockNumber, timestamp }: {
+  txHash: string | null
+  blockNumber: number | null
+  timestamp: string | null
+}) {
   return (
     <div className="min-h-screen bg-slate-50">
       <header className="bg-white border-b border-gray-200">
@@ -382,8 +407,8 @@ function VoteConfirmationScreen({ txHash }: { txHash: string | null }) {
           <div className="grid md:grid-cols-3 gap-6 mb-8">
             {[
               { label: "Transaction Hash", value: txHash || "Pending..." },
-              { label: "Block Number", value: "Pending" },
-              { label: "Timestamp", value: new Date().toUTCString() },
+              { label: "Block Number", value: blockNumber ? blockNumber.toLocaleString() : "Confirming..." },
+              { label: "Timestamp", value: timestamp ? new Date(timestamp).toLocaleString() : new Date().toLocaleString() },
             ].map((item, idx) => (
               <div key={idx} className="bg-slate-100 rounded-xl p-4">
                 <p className="text-xs text-gray-600 mb-2">{item.label}</p>

@@ -57,8 +57,12 @@ export async function POST(request: Request) {
         if (action === 'end') targetState = 'Ended'
         if (action === 'newElection') targetState = 'Created'
 
-        // Log to DB
-        await updateElectionState(targetState)
+        // Log to DB - pass the newName when creating a new election
+        if (action === 'newElection') {
+            await updateElectionState(targetState, undefined, newName)
+        } else {
+            await updateElectionState(targetState)
+        }
 
         // 2. Sync to Blockchain (Best Effort / Background)
         // We still need to sync because VOTING requires the contract to be in Voting state.

@@ -270,7 +270,7 @@ export async function getLatestElection() {
     return result.length > 0 ? result[0] : null
 }
 
-export async function updateElectionState(state: string, contractAddress?: string) {
+export async function updateElectionState(state: string, contractAddress?: string, electionName?: string) {
     // Get or create current election
     const existing = await getLatestElection()
 
@@ -283,9 +283,11 @@ export async function updateElectionState(state: string, contractAddress?: strin
         if (existing && state !== 'Created') {
             // Update logic below
         } else {
+            // Use provided name or default to 'New Election'
+            const name = electionName || 'New Election'
             const result = await sql`
                 INSERT INTO elections (name, state, contract_address)
-                VALUES ('Election', ${state}, ${contractAddress ?? null})
+                VALUES (${name}, ${state}, ${contractAddress ?? null})
                 RETURNING *
             `
             return result[0]
