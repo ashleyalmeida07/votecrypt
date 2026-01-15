@@ -14,9 +14,25 @@ export default function SignUpPage() {
   const handleGoogleSignUp = async () => {
     setLoading(true)
     try {
-      await signInWithGoogle()
-      toast.success("Account created successfully!")
-      router.push("/verify-phone")
+      const result = await signInWithGoogle()
+      
+      if (result && result.user) {
+        // Sync user to database with isSignup flag
+        await fetch('/api/auth/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            firebaseUid: result.user.uid,
+            email: result.user.email,
+            displayName: result.user.displayName,
+            photoUrl: result.user.photoURL,
+            isSignup: true
+          })
+        });
+        
+        toast.success("Account created successfully!")
+        router.push("/verify-phone")
+      }
     } catch (error: any) {
       console.error("Sign up error:", error)
       toast.error(error.message || "Failed to create account")

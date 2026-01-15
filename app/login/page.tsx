@@ -14,7 +14,6 @@ export default function LoginPage() {
   const handleGoogleSignIn = async () => {
     setLoading(true)
     try {
-      // First, authenticate with Google
       const result = await signInWithGoogle()
       
       if (!result?.user?.uid) {
@@ -31,21 +30,13 @@ export default function LoginPage() {
         })
       })
       
-      if (!response.ok) {
-        const text = await response.text()
-        console.error("API Error:", text)
-        throw new Error(`Failed to check user: ${response.status}`)
-      }
-      
       const data = await response.json()
       
       if (!data.exists) {
-        // User not found in database - sign them out and redirect to signup
+        // User not in database - sign them out and redirect
         await signOut()
         toast.error("Account not found. Please sign up first.")
-        setTimeout(() => {
-          router.push("/signup")
-        }, 1500)
+        setTimeout(() => router.push("/signup"), 1500)
         return
       }
       

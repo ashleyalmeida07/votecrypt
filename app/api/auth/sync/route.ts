@@ -3,7 +3,7 @@ import { createOrUpdateUser, createAuditLog } from '@/lib/db';
 
 export async function POST(request: NextRequest) {
   try {
-    const { firebaseUid, email, displayName, photoUrl } = await request.json();
+    const { firebaseUid, email, displayName, photoUrl, isSignup } = await request.json();
 
     if (!firebaseUid || !email) {
       return NextResponse.json(
@@ -12,8 +12,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Create or update user in database
-    const user = await createOrUpdateUser(firebaseUid, email, displayName, photoUrl);
+    // Only create user if isSignup is true, otherwise just update
+    let user;
+    if (isSignup) {
+      user = await createOrUpdateUser(firebaseUid, email, displayName, photoUrl);
+    } else {
+      // For login, only update existing user
+      user = await getUserByFirebaseUid(firebaseUid);
+      if (!user) {
+        return NextResponse.json(
+          { error: 'User not found. Please sign up first.' },
+          { status: 404 }
+        );
+      }
+    }
 
     // Log the authentication event (optional - don't fail if audit log fails)
     try {

@@ -33,27 +33,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      if (firebaseUser) {
-        setUser(firebaseUser);
-
-        // Sync user to database
-        try {
-          await fetch('/api/auth/sync', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              firebaseUid: firebaseUser.uid,
-              email: firebaseUser.email || '',
-              displayName: firebaseUser.displayName,
-              photoUrl: firebaseUser.photoURL,
-            }),
-          });
-        } catch (error) {
-          console.error('Failed to sync user to database:', error);
-        }
-      } else {
-        setUser(null);
-      }
+      setUser(firebaseUser || null);
       setLoading(false);
     });
 

@@ -26,28 +26,66 @@ export default function VoterDashboard() {
 
   useEffect(() => {
     if (authLoading) return // Wait for auth init
-    if (!user) {
-      router.push('/login')
-      return
-    }
+    
+    const checkUserAndLoadData = async () => {
+      if (!user) {
+        router.push('/login')
+        return
+      }
 
-    const loadData = async () => {
+      // Check if user exists in database
       try {
-        // 1. Fetch Election Stats (Name, Candidates, State)
-        const statsRes = await fetch('/api/election/stats')
-        const statsData = await statsRes.json()
+        const checkResponse = await fetch('/api/auth/check-user', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            firebaseUid: user.uid,
+            email: user.email
+          })
+        });
 
-        if (statsData) {
-          setElectionName(statsData.electionName || "Current Election")
-          setCandidates(statsData.candidates || [])
-          setElectionState(statsData.state ?? 0)
+        const checkData = await checkResponse.json();
+
+        if (!checkData.exists) {
+          // User not in database, redirect to signup
+          await signOut();
+          toast.error("Please sign up first to access the dashboard");
+          router.push('/signup');
+          return;
         }
 
-        // 2. Check Vote Status
-        if (user.uid) {
-          const statusRes = await fetch(`/api/election/vote?uid=${user.uid}`)
-          const statusData = await statusRes.json()
-          if (statusData.hasVoted) {
+        // User exists, proceed with loading data
+        await loadData();
+      } catch (error) {
+        console.error('Failed to verify user:', error);
+        toast.error("Failed to verify user account");
+        await signOut();
+        router.push('/login');
+      }
+    };
+
+    checkUserAndLoadData();
+  }, [user, authLoading, router, signOut]);
+
+  const loadData = async () => {
+    if (!user) return;
+    
+    try {
+      // 1. Fetch Election Stats (Name, Candidates, State)
+      const statsRes = await fetch('/api/election/stats')
+      const statsData = await statsRes.json()
+
+      if (statsData) {
+        setElectionName(statsData.electionName || "Current Election")
+        setCandidates(statsData.candidates || [])
+        setElectionState(statsData.state ?? 0)
+      }
+
+      // 2. Check Vote Status
+      if (user.uid) {
+        const statusRes = await fetch(`/api/election/vote?uid=${user.uid}`)
+        const statusData = await statusRes.json()
+        if (statusData.hasVoted) {
             setHasVoted(true)
             setVotedFor(statusData.voterInfo?.votedFor)
             setTransactionHash(statusData.voterInfo?.transactionHash)
@@ -60,9 +98,6 @@ export default function VoterDashboard() {
         setLoading(false)
       }
     }
-
-    loadData()
-  }, [user, router, authLoading])
 
   const handleSignOut = async () => {
     try {
