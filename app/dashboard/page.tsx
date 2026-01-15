@@ -6,17 +6,63 @@ import { useAuth } from "@/contexts/AuthContext"
 import { toast } from "sonner"
 
 export default function VoterDashboard() {
-  const [selectedCandidate, setSelectedCandidate] = useState<string | null>(null)
+  const [selectedCandidate, setSelectedCandidate] = useState<number | null>(null)
+  const [candidates, setCandidates] = useState<any[]>([])
+  const [electionName, setElectionName] = useState("Loading Election...")
+  const [electionState, setElectionState] = useState(0) // 0=Created, 1=Voting, 2=Ended
+
+  // Restore missing state
   const [showConfirmation, setShowConfirmation] = useState(false)
   const [hasVoted, setHasVoted] = useState(false)
-  const { user, signOut } = useAuth()
+  const [votedFor, setVotedFor] = useState<number | null>(null)
+  const [transactionHash, setTransactionHash] = useState<string | null>(null)
+  const [blockNumber, setBlockNumber] = useState<number | null>(null)
+  const [voteTimestamp, setVoteTimestamp] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [submitting, setSubmitting] = useState(false)
+
+  const { user, signOut, loading: authLoading } = useAuth()
   const router = useRouter()
 
   useEffect(() => {
+    if (authLoading) return // Wait for auth init
     if (!user) {
       router.push('/login')
+      return
     }
-  }, [user, router])
+
+    const loadData = async () => {
+      try {
+        // 1. Fetch Election Stats (Name, Candidates, State)
+        const statsRes = await fetch('/api/election/stats')
+        const statsData = await statsRes.json()
+
+        if (statsData) {
+          setElectionName(statsData.electionName || "Current Election")
+          setCandidates(statsData.candidates || [])
+          setElectionState(statsData.state ?? 0)
+        }
+
+        // 2. Check Vote Status
+        if (user.uid) {
+          const statusRes = await fetch(`/api/election/vote?uid=${user.uid}`)
+          const statusData = await statusRes.json()
+          if (statusData.hasVoted) {
+            setHasVoted(true)
+            setVotedFor(statusData.voterInfo?.votedFor)
+            setTransactionHash(statusData.voterInfo?.transactionHash)
+          }
+        }
+      } catch (error) {
+        console.error("Failed to load dashboard data:", error)
+        toast.error("Failed to load election data")
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    loadData()
+  }, [user, router, authLoading])
 
   const handleSignOut = async () => {
     try {
@@ -28,24 +74,70 @@ export default function VoterDashboard() {
     }
   }
 
-  if (!user) {
-    return null // Loading or redirecting
+  if (!user || loading) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-slate-900"></div>
+      </div>
+    )
   }
 
-  const candidates = [
-    { id: "1", name: "Alice Johnson", party: "Democratic Party", bio: "Education and climate advocate" },
-    { id: "2", name: "Robert Chen", party: "Republican Party", bio: "Economic and trade specialist" },
-    { id: "3", name: "Maria Garcia", party: "Independent", bio: "Healthcare and social reform" },
-  ]
-
   const handleVoteSubmit = async () => {
-    await new Promise((resolve) => setTimeout(resolve, 2000))
-    setHasVoted(true)
-    setShowConfirmation(false)
+    // Find the selected candidate
+    const candidate = candidates.find(c => c.id === selectedCandidate)
+    if (!candidate || !user) return
+
+    // CRITICAL: Use blockchainId, NOT the database id (database IDs like 9 are invalid on chain)
+    const blockchainId = candidate.blockchainId
+
+    console.log('Vote submission debug:', {
+      selectedCandidate,
+      candidateDbId: candidate.id,
+      candidateBlockchainId: candidate.blockchainId,
+      candidateName: candidate.name,
+      usingId: blockchainId
+    })
+
+    // Validate blockchainId exists
+    if (blockchainId === undefined || blockchainId === null) {
+      toast.error(`Candidate "${candidate.name}" has no blockchain ID. Please sync the database.`)
+      return
+    }
+
+    setSubmitting(true)
+    try {
+      const res = await fetch('/api/election/vote', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          candidateId: blockchainId, // Always use blockchain ID, never database ID
+          firebaseUid: user.uid,
+          candidateName: candidate.name
+        })
+      })
+
+      const data = await res.json()
+
+      if (res.ok) {
+        setTransactionHash(data.transactionHash)
+        setBlockNumber(data.blockNumber)
+        setVoteTimestamp(data.timestamp)
+        setHasVoted(true)
+        setShowConfirmation(false)
+        toast.success("Vote submitted successfully!")
+      } else {
+        throw new Error(data.error || "Vote submission failed")
+      }
+    } catch (error: any) {
+      console.error("Vote error:", error)
+      toast.error(error.message)
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   if (hasVoted) {
-    return <VoteConfirmationScreen />
+    return <VoteConfirmationScreen txHash={transactionHash} blockNumber={blockNumber} timestamp={voteTimestamp} />
   }
 
   return (
@@ -62,15 +154,15 @@ export default function VoterDashboard() {
                   <p className="text-xs text-gray-600">{user.email}</p>
                 </div>
                 {user.photoURL && (
-                  <img 
-                    src={user.photoURL} 
-                    alt={user.displayName} 
+                  <img
+                    src={user.photoURL}
+                    alt={user.displayName}
                     className="w-10 h-10 rounded-full border-2 border-teal-500"
                   />
                 )}
               </div>
             )}
-            <button 
+            <button
               onClick={handleSignOut}
               className="text-gray-600 hover:text-slate-900 flex items-center gap-2 font-medium transition-colors"
             >
@@ -98,15 +190,17 @@ export default function VoterDashboard() {
 
             {/* Election Info */}
             <div className="ballot-card ballot-card-hover p-6 mb-8">
-              <h2 className="text-lg font-bold text-slate-900 mb-4">Presidential Election 2025</h2>
+              <h2 className="text-lg font-bold text-slate-900 mb-4">{electionName}</h2>
               <div className="grid md:grid-cols-2 gap-4 text-sm">
                 <div>
-                  <p className="text-gray-600">Election Date</p>
-                  <p className="font-semibold text-slate-900">March 15, 2025</p>
+                  <p className="text-gray-600">Status</p>
+                  <p className={`font-semibold ${electionState === 1 ? 'text-green-600 animate-pulse' : 'text-slate-900'}`}>
+                    {electionState === 0 ? 'Created (Not Started)' : electionState === 1 ? 'Live / Voting' : 'Ended'}
+                  </p>
                 </div>
                 <div>
-                  <p className="text-gray-600">Voting Status</p>
-                  <p className="font-semibold text-slate-900">Active</p>
+                  <p className="text-gray-600">Candidates</p>
+                  <p className="font-semibold text-slate-900">{candidates.length}</p>
                 </div>
               </div>
             </div>
@@ -115,48 +209,55 @@ export default function VoterDashboard() {
             <div className="ballot-card ballot-card-hover p-6 mb-8">
               <h2 className="text-lg font-bold text-slate-900 mb-6">Select Your Candidate</h2>
 
-              <div className="space-y-4">
-                {candidates.map((candidate) => (
-                  <div
-                    key={candidate.id}
-                    className={`p-4 border-2 rounded-xl cursor-pointer transition-all ${
-                      selectedCandidate === candidate.id
+              {electionState !== 1 ? (
+                <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-center">
+                  Voting is currently <strong>{electionState === 0 ? 'Not Started' : 'Closed'}</strong>.
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {candidates.map((candidate) => (
+                    <div
+                      key={candidate.id}
+                      className={`p-4 border-2 rounded-xl cursor-pointer transition-all ${selectedCandidate === candidate.id
                         ? "border-teal-500 bg-teal-50"
                         : "border-gray-200 hover:border-slate-900"
-                    }`}
-                    onClick={() => setSelectedCandidate(candidate.id)}
-                  >
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <h3 className="font-bold text-slate-900 mb-1">{candidate.name}</h3>
-                        <p className="text-sm text-gray-600 mb-2">{candidate.party}</p>
-                        <p className="text-sm text-gray-500">{candidate.bio}</p>
-                      </div>
-                      <div
-                        className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ml-4 ${
-                          selectedCandidate === candidate.id ? "border-teal-500 bg-teal-500" : "border-gray-300"
                         }`}
-                      >
-                        {selectedCandidate === candidate.id && <div className="w-2 h-2 bg-white rounded-full"></div>}
+                      onClick={() => setSelectedCandidate(candidate.id)}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <h3 className="font-bold text-slate-900 mb-1">{candidate.name}</h3>
+                          <p className="text-sm text-gray-600 mb-2">{candidate.party}</p>
+                        </div>
+                        <div
+                          className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ml-4 ${selectedCandidate === candidate.id ? "border-teal-500 bg-teal-500" : "border-gray-300"
+                            }`}
+                        >
+                          {selectedCandidate === candidate.id && <div className="w-2 h-2 bg-white rounded-full"></div>}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                  {candidates.length === 0 && (
+                    <p className="text-gray-500">No candidates available.</p>
+                  )}
+                </div>
+              )}
 
               {/* Cast Vote Button */}
-              <div className="mt-8">
-                <button
-                  onClick={() => setShowConfirmation(true)}
-                  disabled={!selectedCandidate}
-                  className={`w-full ballot-primary-btn flex items-center justify-center gap-2 ${
-                    !selectedCandidate ? "opacity-50 cursor-not-allowed" : ""
-                  }`}
-                >
-                  Cast Vote Securely
-                  <ChevronRight className="w-4 h-4" />
-                </button>
-              </div>
+              {electionState === 1 && (
+                <div className="mt-8">
+                  <button
+                    onClick={() => setShowConfirmation(true)}
+                    disabled={!selectedCandidate}
+                    className={`w-full ballot-primary-btn flex items-center justify-center gap-2 ${!selectedCandidate ? "opacity-50 cursor-not-allowed" : ""
+                      }`}
+                  >
+                    Cast Vote Securely
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
             </div>
           </div>
 
@@ -213,6 +314,7 @@ export default function VoterDashboard() {
           candidateName={candidates.find((c) => c.id === selectedCandidate)?.name || ""}
           onConfirm={handleVoteSubmit}
           onCancel={() => setShowConfirmation(false)}
+          loading={submitting}
         />
       )}
     </div>
@@ -223,19 +325,14 @@ function VoteConfirmationModal({
   candidateName,
   onConfirm,
   onCancel,
+  loading
 }: {
   candidateName: string
   onConfirm: () => void
   onCancel: () => void
+  loading: boolean
 }) {
-  const [loading, setLoading] = useState(false)
 
-  const handleConfirm = async () => {
-    setLoading(true)
-    await onConfirm()
-  }
-
-  const mockHash = "0xab73f1j3d0a9k2l8m9n0o1p2q3r4s5t6u7v8w9x0"
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
@@ -253,13 +350,8 @@ function VoteConfirmationModal({
           </p>
         </div>
 
-        <div className="bg-gray-50 rounded-xl p-4 mb-6">
-          <p className="text-xs text-gray-600 mb-2">Vote Hash (for verification):</p>
-          <code className="text-xs font-mono break-all text-gray-700">{mockHash}</code>
-        </div>
-
         <p className="text-sm text-gray-600 mb-6 text-center">
-          "Your vote is anonymous, encrypted, and permanently recorded on the blockchain."
+          "Your vote will be encrypted, anonymized, and permanently recorded on the blockchain."
         </p>
 
         <div className="flex gap-4">
@@ -271,11 +363,10 @@ function VoteConfirmationModal({
             Cancel
           </button>
           <button
-            onClick={handleConfirm}
+            onClick={onConfirm}
             disabled={loading}
-            className={`flex-1 ballot-secondary-btn flex items-center justify-center gap-2 ${
-              loading ? "opacity-50 cursor-not-allowed" : ""
-            }`}
+            className={`flex-1 ballot-secondary-btn flex items-center justify-center gap-2 ${loading ? "opacity-50 cursor-not-allowed" : ""
+              }`}
           >
             {loading ? "Submitting..." : "Submit Vote"}
           </button>
@@ -285,7 +376,11 @@ function VoteConfirmationModal({
   )
 }
 
-function VoteConfirmationScreen() {
+function VoteConfirmationScreen({ txHash, blockNumber, timestamp }: {
+  txHash: string | null
+  blockNumber: number | null
+  timestamp: string | null
+}) {
   return (
     <div className="min-h-screen bg-slate-50">
       <header className="bg-white border-b border-gray-200">
@@ -311,9 +406,9 @@ function VoteConfirmationScreen() {
           {/* Transaction Details */}
           <div className="grid md:grid-cols-3 gap-6 mb-8">
             {[
-              { label: "Transaction Hash", value: "0x7f3e9d2a1b4c..." },
-              { label: "Block Number", value: "#18,456,890" },
-              { label: "Timestamp", value: "2025-03-15 14:32:45 UTC" },
+              { label: "Transaction Hash", value: txHash || "Pending..." },
+              { label: "Block Number", value: blockNumber ? blockNumber.toLocaleString() : "Confirming..." },
+              { label: "Timestamp", value: timestamp ? new Date(timestamp).toLocaleString() : new Date().toLocaleString() },
             ].map((item, idx) => (
               <div key={idx} className="bg-slate-100 rounded-xl p-4">
                 <p className="text-xs text-gray-600 mb-2">{item.label}</p>

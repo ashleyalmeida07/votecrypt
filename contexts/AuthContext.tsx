@@ -6,25 +6,25 @@ import {
   signInWithPopup,
   signOut as firebaseSignOut,
   onAuthStateChanged,
-  GoogleAuthProvider,
   ConfirmationResult,
+  RecaptchaVerifier,
 } from 'firebase/auth';
-import { auth, googleProvider, RecaptchaVerifier, signInWithPhoneNumber } from '@/lib/firebase';
+import { auth, googleProvider, signInWithPhoneNumber } from '@/lib/firebase';
 
 interface AuthContextType {
   user: User | null;
   loading: boolean;
   signInWithGoogle: () => Promise<any>;
-  signInWithPhone: (phoneNumber: string, recaptchaVerifier: any) => Promise<ConfirmationResult>;
+  signInWithPhone: (phoneNumber: string, recaptchaVerifier: RecaptchaVerifier) => Promise<ConfirmationResult>;
   signOut: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({
   user: null,
   loading: true,
-  signInWithGoogle: async () => {},
+  signInWithGoogle: async () => { },
   signInWithPhone: async () => ({} as ConfirmationResult),
-  signOut: async () => {},
+  signOut: async () => { },
 });
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -35,7 +35,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         setUser(firebaseUser);
-        
+
         // Sync user to database
         try {
           await fetch('/api/auth/sync', {
@@ -70,7 +70,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const signInWithPhone = async (phoneNumber: string, recaptchaVerifier: any): Promise<ConfirmationResult> => {
+  const signInWithPhone = async (phoneNumber: string, recaptchaVerifier: RecaptchaVerifier): Promise<ConfirmationResult> => {
     try {
       if (!auth) {
         throw new Error('Firebase auth not initialized')
@@ -81,13 +81,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!recaptchaVerifier) {
         throw new Error('reCAPTCHA verifier is required')
       }
-      
+
       // Validate phone number format for India
       const phoneRegex = /^\+91[6-9]\d{9}$/
       if (!phoneRegex.test(phoneNumber)) {
         throw new Error('Invalid Indian phone number format. Expected: +91XXXXXXXXXX')
       }
-      
+
       console.log('Attempting to sign in with phone:', phoneNumber)
       const confirmationResult = await signInWithPhoneNumber(auth, phoneNumber, recaptchaVerifier);
       console.log('Phone sign-in successful')

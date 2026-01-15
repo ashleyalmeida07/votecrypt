@@ -74,12 +74,50 @@ export function getWalletClient() {
         chain: detectedChain,
         transport: http(RPC_URL, {
             batch: false,
-            retryCount: 0, // Don't retry - let us handle errors
-            fetchOptions: {
-                cache: 'no-store',
-            },
+            retryCount: 3,
+            retryDelay: 1000,
         }),
     })
+}
+
+// Helper: Safely write to contract with manual nonce management
+export async function writeContractWithRetry(functionName: string, args: any[] = []) {
+    const walletClient = getWalletClient()
+    const account = privateKeyToAccount(ADMIN_PRIVATE_KEY!)
+    let retries = 3
+
+    while (retries > 0) {
+        try {
+            // Fetch fresh nonce including pending txs
+            const nonce = await publicClient.getTransactionCount({
+                address: account.address,
+                blockTag: 'pending'
+            })
+
+            console.log(`📝 Attempting ${functionName} with nonce ${nonce}`)
+
+            const hash = await walletClient.writeContract({
+                ...contractConfig,
+                functionName,
+                args,
+                nonce, // Manually set nonce to avoid race condition where viem fetches old one
+            })
+            return hash
+
+        } catch (error: any) {
+            console.error(`❌ Tx failed (retries left: ${retries}):`, error.shortMessage || error.message)
+
+            if (error.message.includes('replacement transaction underpriced') ||
+                error.message.includes('nonce too low')) {
+                // Wait a bit and retry with a new nonce fetch
+                await new Promise(r => setTimeout(r, 2000))
+                retries--
+                continue
+            }
+            throw error
+        }
+    }
+    throw new Error('Failed to submit transaction after retries')
 }
 
 // Get next nonce (handles pending transactions)
@@ -93,6 +131,25 @@ export async function getNextNonce(): Promise<number> {
     })
     console.log('📊 Next nonce:', nonce)
     return nonce
+}
+
+// Helper: Get transaction receipt (for block number, status, etc.)
+export async function getTransactionReceipt(hash: `0x${string}`) {
+    try {
+        const receipt = await publicClient.waitForTransactionReceipt({
+            hash,
+            confirmations: 1,
+            timeout: 60_000, // 60 second timeout
+        })
+        return {
+            blockNumber: Number(receipt.blockNumber),
+            status: receipt.status,
+            gasUsed: Number(receipt.gasUsed),
+        }
+    } catch (error) {
+        console.error('Failed to get receipt:', error)
+        return null
+    }
 }
 
 // Get detected chain info for debugging
@@ -193,8 +250,35 @@ export async function getAllCandidates() {
     return candidates
 }
 
+// Helper: Check voter status on blockchain
+export async function getVoterOnChain(address: `0x${string}`): Promise<{ isRegistered: boolean, hasVoted: boolean, votedFor: number }> {
+    const result = await publicClient.readContract({
+        ...contractConfig,
+        functionName: 'voters',
+        args: [address],
+    })
+
+    // Result is [isRegistered, hasVoted, votedFor]
+    const [isRegistered, hasVoted, votedFor] = result as [boolean, boolean, bigint]
+
+    return {
+        isRegistered,
+        hasVoted,
+        votedFor: Number(votedFor)
+    }
+}
+
 // Helper: Get total votes cast
 export async function getTotalVotes(): Promise<number> {
     const candidates = await getAllCandidates()
     return candidates.reduce((sum, c) => sum + c.voteCount, 0)
+}
+
+// Helper: Map Firebase UID to Ethereum Address (Deterministic)
+// This enables Gasless voting where the backend generates a unique identity for the user.
+import { keccak256, stringToHex } from 'viem'
+export function getMappedAddress(uid: string): `0x${string}` {
+    const hash = keccak256(stringToHex(uid))
+    // Use last 20 bytes (40 hex chars) for the address to mimic Ethereum address format
+    return `0x${hash.slice(-40)}` as `0x${string}`
 }
