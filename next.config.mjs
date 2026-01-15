@@ -6,6 +6,8 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
+  turbopack: {},
+  serverExternalPackages: ['tesseract.js', 'canvas', 'sharp']
 }
 
 export default nextConfig

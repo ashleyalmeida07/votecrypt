@@ -61,7 +61,18 @@ export default function VoterDashboard() {
           return;
         }
 
-        // User exists, proceed with loading data
+        // Check if user has uploaded and verified voter ID
+        const voterIdResponse = await fetch(`/api/voter-id/status?firebaseUid=${user.uid}`);
+        const voterIdData = await voterIdResponse.json();
+
+        if (!voterIdData.hasVoterId || !voterIdData.isVerified) {
+          // User hasn't uploaded voter ID, redirect to upload page
+          toast.error("Please upload and verify your Voter ID to access the dashboard");
+          router.push('/upload-voter-id');
+          return;
+        }
+
+        // User exists and has verified voter ID, proceed with loading data
         await loadData();
       } catch (error) {
         console.error('Failed to verify user:', error);

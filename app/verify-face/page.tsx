@@ -1,177 +1,258 @@
 "use client"
-import { useEffect, useRef, useState } from "react"
+import { useState, useRef, useCallback, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import Link from "next/link"
-import { Shield, Camera, CheckCircle, AlertCircle } from "lucide-react"
+import { Shield, Camera, CheckCircle, AlertCircle, Loader2 } from "lucide-react"
+import { useAuth } from "@/contexts/AuthContext"
+import { toast } from "sonner"
+import Webcam from "react-webcam"
 
 export default function VerifyFacePage() {
-  const videoRef = useRef<HTMLVideoElement>(null)
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-  const [status, setStatus] = useState<"idle" | "detecting" | "match-success" | "match-failed">("idle")
-  const [permission, setPermission] = useState<"pending" | "granted" | "denied">("pending")
+  const [capturing, setCapturing] = useState(false)
+  const [capturedImage, setCapturedImage] = useState<string | null>(null)
+  const [verifying, setVerifying] = useState(false)
+  const [verificationStatus, setVerificationStatus] = useState<'idle' | 'success' | 'failed'>('idle')
+  const [verificationDetails, setVerificationDetails] = useState<any>(null)
+  const webcamRef = useRef<Webcam>(null)
+  const { user } = useAuth()
+  const router = useRouter()
 
   useEffect(() => {
-    startCamera()
+    if (!user) {
+      router.push('/login')
+    }
+  }, [user, router])
+
+  const captureImage = useCallback(() => {
+    if (webcamRef.current) {
+      const imageSrc = webcamRef.current.getScreenshot()
+      if (imageSrc) {
+        setCapturedImage(imageSrc)
+        setCapturing(false)
+      }
+    }
   }, [])
 
-  const startCamera = async () => {
+  const retakePhoto = () => {
+    setCapturedImage(null)
+    setVerificationStatus('idle')
+    setVerificationDetails(null)
+  }
+
+  const verifyFace = async () => {
+    if (!capturedImage || !user) return
+
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "user" },
-        audio: false,
+      setVerifying(true)
+      setVerificationStatus('idle')
+      setVerificationDetails(null)
+
+      const response = await fetch('/api/face/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          firebaseUid: user.uid,
+          selfieImage: capturedImage
+        })
       })
 
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream
-        setPermission("granted")
+      const data = await response.json()
+
+      if (response.ok && data.verified) {
+        setVerificationStatus('success')
+        setVerificationDetails(data)
+        toast.success(`Face verified! ${data.similarity_percentage}% match`)
+        
+        // Redirect to dashboard after successful verification
+        setTimeout(() => {
+          router.push('/dashboard')
+        }, 2500)
+      } else {
+        setVerificationStatus('failed')
+        setVerificationDetails(data)
+        const errorMsg = data.message || "Face verification failed. Please try again."
+        toast.error(errorMsg)
       }
-    } catch (error) {
-      console.error("Camera access denied:", error)
-      setPermission("denied")
+    } catch (error: any) {
+      console.error("Verification error:", error)
+      setVerificationStatus('failed')
+      toast.error("Failed to verify face")
+    } finally {
+      setVerifying(false)
     }
   }
 
-  const handleCapture = async () => {
-    setStatus("detecting")
-    await new Promise((resolve) => setTimeout(resolve, 2000))
-
-    const isSuccess = Math.random() > 0.2
-
-    if (isSuccess) {
-      setStatus("match-success")
-      setTimeout(() => {
-        window.location.href = "/dashboard"
-      }, 2000)
-    } else {
-      setStatus("match-failed")
-    }
-  }
-
-  const handleRetry = () => {
-    setStatus("idle")
+  if (!user) {
+    return null
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
+    <div className="min-h-screen bg-linear-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center p-4">
+      <div className="w-full max-w-2xl">
         {/* Logo */}
-        <div className="text-center mb-12">
+        <div className="text-center mb-8">
           <Link href="/" className="inline-flex items-center gap-3 text-white hover:opacity-80 transition-opacity mb-6">
             <div className="w-10 h-10 rounded-xl bg-teal-500 flex items-center justify-center">
               <Shield className="w-6 h-6 text-white" />
             </div>
             <span className="text-2xl font-bold">BALLOT</span>
           </Link>
-          <p className="text-gray-300">Biometric Verification</p>
+          <h1 className="text-3xl font-bold text-white mb-2">Face Verification</h1>
+          <p className="text-gray-300">Verify your identity to access the voting portal</p>
         </div>
 
         {/* Card */}
         <div className="ballot-card p-8">
-          <div className="mb-8">
-            <h1 className="text-2xl font-bold text-slate-900 mb-2">AI Face Verification</h1>
-            <p className="text-gray-600">Step 2 of 3 - Biometric Authentication</p>
-          </div>
-
-          {/* Progress Steps */}
-          <div className="flex gap-2 mb-8">
-            {[1, 2, 3].map((stepNum) => {
-              const isActive = stepNum <= 2
-              return (
-                <div
-                  key={stepNum}
-                  className={`flex-1 h-2 rounded-full transition-all ${isActive ? "bg-slate-900" : "bg-gray-200"}`}
-                />
-              )
-            })}
-          </div>
-
-          {/* Camera or Permission Denied */}
-          {permission === "denied" ? (
-            <div className="text-center">
-              <div className="mb-4 flex justify-center">
-                <AlertCircle className="w-16 h-16 text-red-500" />
-              </div>
-              <h2 className="text-lg font-bold text-slate-900 mb-3">Camera Access Required</h2>
-              <p className="text-gray-600 mb-6">Allow camera access in browser settings to continue.</p>
-              <button
-                onClick={startCamera}
-                className="bg-teal-500 hover:bg-teal-600 text-white font-semibold rounded-xl px-6 py-3 transition-all duration-200 active:scale-95 w-full flex items-center justify-center gap-2"
-              >
-                <Camera className="w-4 h-4" /> Try Again
-              </button>
-            </div>
-          ) : (
-            <>
-              {/* Video Container */}
-              <div className="relative bg-black rounded-2xl overflow-hidden mb-6 aspect-video">
-                <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover" />
-
-                {/* Face Bounding Box */}
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="border-2 border-teal-500 rounded-3xl w-48 h-56"></div>
-                </div>
-
-                {/* Status Overlay */}
-                {status !== "idle" && (
-                  <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center">
-                    <div className="text-center">
-                      {status === "detecting" && (
-                        <>
-                          <div className="w-16 h-16 border-4 border-teal-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-                          <p className="text-white font-semibold">Analyzing face...</p>
-                        </>
-                      )}
-                      {status === "match-success" && (
-                        <>
-                          <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
-                          <p className="text-white font-semibold">Verified!</p>
-                        </>
-                      )}
-                      {status === "match-failed" && (
-                        <>
-                          <AlertCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
-                          <p className="text-white font-semibold">Try Again</p>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <canvas ref={canvasRef} className="hidden" />
-
-              {/* Instructions */}
-              <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-xl">
-                <p className="text-sm text-blue-900">Position your face in the frame with good lighting.</p>
-              </div>
-
-              {/* Action Buttons */}
-              {status === "idle" && (
-                <button
-                  onClick={handleCapture}
-                  className="bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded-xl px-6 py-3 transition-all duration-200 active:scale-95 w-full flex items-center justify-center gap-2"
-                >
-                  <Camera className="w-4 h-4" /> Start Verification
-                </button>
-              )}
-
-              {status === "match-failed" && (
-                <button
-                  onClick={handleRetry}
-                  className="bg-teal-500 hover:bg-teal-600 text-white font-semibold rounded-xl px-6 py-3 transition-all duration-200 active:scale-95 w-full"
-                >
-                  Try Again
-                </button>
-              )}
-            </>
-          )}
-
-          {/* Privacy Notice */}
-          <div className="mt-8 p-4 bg-gray-50 rounded-xl border border-gray-200">
-            <p className="text-xs text-gray-700">
-              <strong>Privacy:</strong> Face data is processed locally and immediately deleted after verification. Never
-              stored or shared.
+          {/* Info Alert */}
+          <div className="mb-6 p-4 bg-blue-50 rounded-xl border border-blue-100">
+            <p className="text-sm text-blue-900">
+              <strong>🎥 Live Verification:</strong> Position your face in the camera frame. We'll compare it with your voter ID photo.
             </p>
           </div>
+
+          {/* Camera View or Captured Image */}
+          <div className="mb-6">
+            <div className="relative rounded-xl overflow-hidden bg-black aspect-video">
+              {!capturedImage ? (
+                <Webcam
+                  ref={webcamRef}
+                  audio={false}
+                  screenshotFormat="image/jpeg"
+                  className="w-full h-full object-cover"
+                  mirrored={true}
+                  onUserMedia={() => setCapturing(true)}
+                  onUserMediaError={(err) => {
+                    console.error('Webcam error:', err)
+                    toast.error("Failed to access camera. Please allow camera permissions.")
+                  }}
+                />
+              ) : (
+                <img 
+                  src={capturedImage} 
+                  alt="Captured" 
+                  className="w-full h-full object-cover"
+                />
+              )}
+
+              {/* Overlay guide */}
+              {!capturedImage && (
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                  <div className="w-64 h-80 border-4 border-teal-500 rounded-3xl opacity-50"></div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Verification Status */}
+          {verificationStatus !== 'idle' && (
+            <div className={`mb-6 p-4 rounded-xl border ${
+              verificationStatus === 'success' 
+                ? 'bg-green-50 border-green-200 text-green-700'
+                : 'bg-red-50 border-red-200 text-red-700'
+            }`}>
+              <div className="flex items-center gap-3">
+                {verificationStatus === 'success' ? (
+                  <>
+                    <CheckCircle className="w-5 h-5" />
+                    <div>
+                      <p className="font-semibold">Verification Successful!</p>
+                      {verificationDetails?.similarity_percentage && (
+                        <p className="text-sm mt-1">Match: {verificationDetails.similarity_percentage}%</p>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <AlertCircle className="w-5 h-5" />
+                    <div>
+                      <p className="font-semibold">Verification Failed</p>
+                      {verificationDetails?.similarity_percentage && (
+                        <p className="text-sm mt-1">Match: {verificationDetails.similarity_percentage}%</p>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+              {verificationStatus === 'failed' && (
+                <p className="text-sm mt-2 ml-8">
+                  {verificationDetails?.message || "The face doesn't match your voter ID. Please ensure good lighting and try again."}
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Action Buttons */}
+          <div className="flex gap-3">
+            {!capturedImage ? (
+              <button
+                onClick={captureImage}
+                disabled={!capturing || verifying}
+                className="w-full bg-teal-500 hover:bg-teal-600 text-white font-semibold rounded-xl px-6 py-3 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                <Camera className="w-5 h-5" />
+                Capture Photo
+              </button>
+            ) : (
+              <>
+                <button
+                  onClick={retakePhoto}
+                  disabled={verifying || verificationStatus === 'success'}
+                  className="flex-1 bg-gray-200 hover:bg-gray-300 text-slate-900 font-semibold rounded-xl px-6 py-3 transition-all duration-200 disabled:opacity-50"
+                >
+                  Retake
+                </button>
+                <button
+                  onClick={verifyFace}
+                  disabled={verifying || verificationStatus === 'success'}
+                  className="flex-1 bg-teal-500 hover:bg-teal-600 text-white font-semibold rounded-xl px-6 py-3 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  {verifying ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Verifying...
+                    </>
+                  ) : verificationStatus === 'success' ? (
+                    <>
+                      <CheckCircle className="w-4 h-4" />
+                      Verified
+                    </>
+                  ) : (
+                    'Verify Face'
+                  )}
+                </button>
+              </>
+            )}
+          </div>
+
+          {/* Tips */}
+          <div className="mt-6 p-4 bg-gray-50 rounded-xl">
+            <p className="font-semibold text-slate-900 mb-3">Tips for best results:</p>
+            <ul className="space-y-2 text-sm text-gray-700">
+              <li className="flex items-start gap-2">
+                <span className="text-teal-500 mt-0.5">✓</span>
+                <span>Ensure good lighting on your face</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-teal-500 mt-0.5">✓</span>
+                <span>Look directly at the camera</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-teal-500 mt-0.5">✓</span>
+                <span>Remove sunglasses or face coverings</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-teal-500 mt-0.5">✓</span>
+                <span>Keep your face within the guide frame</span>
+              </li>
+            </ul>
+          </div>
+        </div>
+
+        {/* Security Notice */}
+        <div className="mt-6 text-center">
+          <p className="text-sm text-gray-400">
+            🔒 Face verification ensures only you can access your voting account
+          </p>
         </div>
       </div>
     </div>

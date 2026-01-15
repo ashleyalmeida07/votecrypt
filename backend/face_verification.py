@@ -24,15 +24,17 @@ class FaceVerifier:
     Optimized for CPU inference without any model training.
     """
     
-    def __init__(self, distance_threshold: float = 0.45):
+    def __init__(self, distance_threshold: float = 0.25):
         """
         Initialize the face verifier.
         
         Args:
             distance_threshold: Maximum distance for faces to be considered a match.
-                               Lower values are more strict.
+                               Lower values are more strict. (0.25 = very strict, secure)
         """
         self.distance_threshold = distance_threshold
+        self.min_face_size = 60  # Minimum face size in pixels (adjusted for voter ID cards)
+        self.min_confidence = 0.6  # Minimum detection confidence (60% for voter IDs)
         self.yolo_model = None
         self._deepface = None  # Lazy-loaded DeepFace module
         self._load_yolo_model()
@@ -163,10 +165,28 @@ class FaceVerifier:
         return True, "Image quality OK"
     
     def _select_best_face(self, faces: list) -> Optional[dict]:
-        """Select the face with highest confidence"""
+        """Select the face with highest confidence and validate quality"""
         if not faces:
             return None
-        return max(faces, key=lambda x: x['confidence'])
+        
+        # Filter faces by minimum confidence
+        valid_faces = [f for f in faces if f['confidence'] >= self.min_confidence]
+        if not valid_faces:
+            return None
+        
+        # Filter by minimum size
+        size_valid_faces = []
+        for face in valid_faces:
+            x1, y1, x2, y2 = face['bbox']
+            width = x2 - x1
+            height = y2 - y1
+            if width >= self.min_face_size and height >= self.min_face_size:
+                size_valid_faces.append(face)
+        
+        if not size_valid_faces:
+            return None
+        
+        return max(size_valid_faces, key=lambda x: x['confidence'])
     
     def verify_faces(self, id_image_bytes: bytes, selfie_image_bytes: bytes) -> Dict[str, Any]:
         """
@@ -204,7 +224,9 @@ class FaceVerifier:
                 }
             
             # Detect faces in ID image
+            print(f"[DEBUG] Detecting faces in voter ID image (size: {id_image.shape})")
             id_faces = self._detect_faces_yolo(id_image)
+            print(f"[DEBUG] Found {len(id_faces)} face(s) in voter ID")
             if not id_faces:
                 return {
                     "verified": False,
@@ -214,7 +236,9 @@ class FaceVerifier:
                 }
             
             # Detect faces in selfie
+            print(f"[DEBUG] Detecting faces in selfie (size: {selfie_image.shape})")
             selfie_faces = self._detect_faces_yolo(selfie_image)
+            print(f"[DEBUG] Found {len(selfie_faces)} face(s) in selfie")
             if not selfie_faces:
                 return {
                     "verified": False,
@@ -223,20 +247,55 @@ class FaceVerifier:
                     "error": "no_face_in_selfie"
                 }
             
-            # Log if multiple faces detected
-            multiple_faces_warning = None
+            # STRICT: Reject if multiple faces detected (security measure)
             if len(id_faces) > 1:
-                multiple_faces_warning = "Multiple faces in ID - using highest confidence"
+                return {
+                    "verified": False,
+                    "distance": None,
+                    "message": f"Multiple faces detected in ID image ({len(id_faces)} faces). Please use an ID with only your face.",
+                    "error": "multiple_faces_in_id"
+                }
+            
             if len(selfie_faces) > 1:
-                multiple_faces_warning = "Multiple faces in selfie - using highest confidence"
+                return {
+                    "verified": False,
+                    "distance": None,
+                    "message": f"Multiple faces detected in selfie ({len(selfie_faces)} faces). Please ensure only your face is visible.",
+                    "error": "multiple_faces_in_selfie"
+                }
             
             # Select best faces
             best_id_face = self._select_best_face(id_faces)
             best_selfie_face = self._select_best_face(selfie_faces)
             
-            # Crop face regions
-            id_face_crop = self._crop_face(id_image, best_id_face['bbox'])
-            selfie_face_crop = self._crop_face(selfie_image, best_selfie_face['bbox'])
+            # Validate face selection
+            if best_id_face is None:
+                print("[DEBUG] ID face rejected: quality too low or size too small")
+                return {
+                    "verified": False,
+                    "distance": None,
+                    "message": "ID face quality too low or too small. Ensure clear, frontal face photo.",
+                    "error": "low_quality_id_face"
+                }
+            
+            if best_selfie_face is None:
+                print("[DEBUG] Selfie rejected: quality too low or size too small")
+                return {
+                    "verified": False,
+                    "distance": None,
+                    "message": "Selfie face quality too low or too small. Ensure clear, frontal face photo.",
+                    "error": "low_quality_selfie_face"
+                }
+            
+            # Log selected face details
+            id_bbox = best_id_face['bbox']
+            selfie_bbox = best_selfie_face['bbox']
+            print(f"[DEBUG] ID face: confidence={best_id_face['confidence']:.2f}, size={id_bbox[2]-id_bbox[0]}x{id_bbox[3]-id_bbox[1]}")
+            print(f"[DEBUG] Selfie face: confidence={best_selfie_face['confidence']:.2f}, size={selfie_bbox[2]-selfie_bbox[0]}x{selfie_bbox[3]-selfie_bbox[1]}")
+            
+            # Crop face regions with smaller padding for voter ID cards
+            id_face_crop = self._crop_face(id_image, best_id_face['bbox'], padding=0.1)
+            selfie_face_crop = self._crop_face(selfie_image, best_selfie_face['bbox'], padding=0.2)
             
             # Save cropped faces to temp files for DeepFace
             with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as id_tmp:
@@ -272,16 +331,24 @@ class FaceVerifier:
                 distance = result.get('distance', 1.0)
                 is_verified = distance < self.distance_threshold
                 
-                message = "Face matched successfully" if is_verified else "Face mismatch detected"
-                if multiple_faces_warning and is_verified:
-                    message += f" ({multiple_faces_warning})"
+                # Log verification details
+                print(f"\n[VERIFICATION] Distance: {distance:.4f}, Threshold: {self.distance_threshold}")
+                print(f"[VERIFICATION] ID Confidence: {best_id_face['confidence']:.4f}")
+                print(f"[VERIFICATION] Selfie Confidence: {best_selfie_face['confidence']:.4f}")
+                print(f"[VERIFICATION] Result: {'VERIFIED' if is_verified else 'REJECTED'}\n")
+                
+                if is_verified:
+                    message = f"Face verified successfully (similarity: {(1-distance)*100:.1f}%)"
+                else:
+                    message = f"Face verification failed. Faces do not match (similarity: {(1-distance)*100:.1f}%)"
                 
                 return {
                     "verified": is_verified,
                     "distance": round(distance, 4),
                     "message": message,
                     "id_face_confidence": round(best_id_face['confidence'], 4),
-                    "selfie_face_confidence": round(best_selfie_face['confidence'], 4)
+                    "selfie_face_confidence": round(best_selfie_face['confidence'], 4),
+                    "similarity_percentage": round((1 - distance) * 100, 2)
                 }
                 
             finally:
@@ -318,14 +385,14 @@ def get_verifier(distance_threshold: float = 0.45) -> FaceVerifier:
 
 
 def verify_face_match(id_image_bytes: bytes, selfie_image_bytes: bytes, 
-                      threshold: float = 0.45) -> Dict[str, Any]:
+                      threshold: float = 0.25) -> Dict[str, Any]:
     """
     Convenience function to verify face match.
     
     Args:
         id_image_bytes: ID photo as bytes
         selfie_image_bytes: Selfie photo as bytes
-        threshold: Distance threshold for matching
+        threshold: Distance threshold for matching (0.25 = very strict, secure)
         
     Returns:
         Verification result dictionary

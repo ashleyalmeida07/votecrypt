@@ -10,6 +10,8 @@ export interface User {
     display_name: string | null;
     photo_url: string | null;
     email_verified: boolean;
+    voter_id_url: string | null;
+    voter_id_verified: boolean;
     created_at: Date;
     updated_at: Date;
 }

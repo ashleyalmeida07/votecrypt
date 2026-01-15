@@ -2,7 +2,7 @@
 import { useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { Shield, ArrowRight } from "lucide-react"
+import { Shield } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
 import { toast } from "sonner"
 
@@ -17,6 +17,25 @@ export default function SignUpPage() {
       const result = await signInWithGoogle()
       
       if (result && result.user) {
+        // Check if user already exists in database
+        const checkResponse = await fetch('/api/auth/check-user', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            firebaseUid: result.user.uid,
+            email: result.user.email
+          })
+        });
+
+        const checkData = await checkResponse.json();
+
+        if (checkData.exists) {
+          // User already exists, redirect to login
+          toast.error("Account already exists. Redirecting to login...");
+          setTimeout(() => router.push("/login"), 1500);
+          return;
+        }
+
         // Sync user to database with isSignup flag
         await fetch('/api/auth/sync', {
           method: 'POST',
@@ -42,7 +61,7 @@ export default function SignUpPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-linear-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="text-center mb-12">
@@ -102,86 +121,7 @@ export default function SignUpPage() {
             )}
           </button>
 
-          <div className="relative mb-6">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-gray-200"></div>
-            </div>
-            <div className="relative flex justify-center text-sm">
-              <span className="px-2 bg-white text-gray-500">Or sign up with email</span>
-            </div>
-          </div>
-
-          {/* Traditional Sign Up Form */}
-          <form className="space-y-4 mb-6">
-            <div>
-              <label className="block text-sm font-semibold text-slate-900 mb-2">Full Name</label>
-              <input
-                type="text"
-                placeholder="John Doe"
-                className="ballot-input"
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-semibold text-slate-900 mb-2">Email</label>
-              <input
-                type="email"
-                placeholder="your.email@example.com"
-                className="ballot-input"
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-semibold text-slate-900 mb-2">Password</label>
-              <input
-                type="password"
-                placeholder="Create a strong password"
-                className="ballot-input"
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-semibold text-slate-900 mb-2">Confirm Password</label>
-              <input
-                type="password"
-                placeholder="Re-enter your password"
-                className="ballot-input"
-                required
-              />
-            </div>
-
-            <div className="flex items-start gap-2">
-              <input
-                type="checkbox"
-                id="terms"
-                className="mt-1"
-                required
-              />
-              <label htmlFor="terms" className="text-sm text-gray-600">
-                I agree to the{" "}
-                <a href="#" className="text-teal-600 hover:text-teal-700 font-semibold">
-                  Terms of Service
-                </a>{" "}
-                and{" "}
-                <a href="#" className="text-teal-600 hover:text-teal-700 font-semibold">
-                  Privacy Policy
-                </a>
-              </label>
-            </div>
-
-            <button
-              type="submit"
-              className="w-full bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded-xl px-6 py-3 transition-all duration-200 active:scale-95 flex items-center justify-center gap-2"
-            >
-              Create Account
-              <ArrowRight className="w-4 h-4" />
-            </button>
-          </form>
-
-          <p className="text-center text-sm text-gray-600">
+          <p className="text-center text-sm text-gray-600 mt-6">
             Already have an account?{" "}
             <Link href="/login" className="text-teal-600 hover:text-teal-700 font-semibold">
               Sign in here

@@ -87,8 +87,17 @@ export default function VerifyPhonePage() {
       
       toast.success("Email verified successfully!")
       
-      // Redirect to dashboard immediately
-      router.push("/dashboard")
+      // Check if user has uploaded voter ID
+      const voterIdResponse = await fetch(`/api/voter-id/status?firebaseUid=${user?.uid}`);
+      const voterIdData = await voterIdResponse.json();
+
+      if (!voterIdData.hasVoterId || !voterIdData.isVerified) {
+        // Redirect to voter ID upload (signup flow)
+        router.push("/upload-voter-id");
+      } else {
+        // User already has verified voter ID (login flow) - redirect to face verification
+        router.push("/verify-face");
+      }
     } catch (error: any) {
       toast.error(error.message || "Invalid verification code")
     } finally {

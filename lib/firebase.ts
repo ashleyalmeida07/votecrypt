@@ -1,5 +1,6 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, RecaptchaVerifier as FirebaseRecaptchaVerifier, signInWithPhoneNumber as firebaseSignInWithPhoneNumber } from 'firebase/auth';
+import { getStorage } from 'firebase/storage';
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -25,5 +26,9 @@ if (typeof window !== 'undefined') {
 }
 
 const googleProvider = new GoogleAuthProvider();
+const storage = getStorage(app);
 
-export { app, auth, googleProvider, FirebaseRecaptchaVerifier as RecaptchaVerifier, firebaseSignInWithPhoneNumber as signInWithPhoneNumber };
+// Project folder in Firebase Storage
+export const PROJECT_FOLDER = 'votecrypt';
+
+export { app, auth, googleProvider, storage, FirebaseRecaptchaVerifier as RecaptchaVerifier, firebaseSignInWithPhoneNumber as signInWithPhoneNumber };

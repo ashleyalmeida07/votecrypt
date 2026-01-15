@@ -135,8 +135,8 @@ async def verify_face(
         
         logger.info(f"Processing images - ID: {len(id_bytes)} bytes, Selfie: {len(selfie_bytes)} bytes")
         
-        # Perform face verification
-        result = verify_face_match(id_bytes, selfie_bytes, threshold=0.45)
+        # Perform face verification with very strict threshold for security
+        result = verify_face_match(id_bytes, selfie_bytes, threshold=0.25)
         
         logger.info(f"Verification result: verified={result['verified']}, distance={result.get('distance')}")
         
@@ -177,18 +177,25 @@ async def global_exception_handler(request, exc):
 
 
 if __name__ == "__main__":
+    import sys
     print("\n" + "="*60)
-    print("≡ƒù│∩╕Å  BALLOT Face Verification API Server")
+    print("🗳️  BALLOT Face Verification API Server")
     print("="*60)
-    print("\n≡ƒôì Server running at: http://localhost:8000")
-    print("≡ƒôÜ API Docs: http://localhost:8000/docs")
-    print("≡ƒöº Health Check: http://localhost:8000/health")
+    print("\n🌐 Server running at: http://localhost:8000")
+    print("📚 API Docs: http://localhost:8000/docs")
+    print("💚 Health Check: http://localhost:8000/health")
     print("\n" + "="*60 + "\n")
+    
+    # Disable reload on Windows to avoid multiprocessing issues with Python 3.13
+    is_windows = sys.platform.startswith('win')
     
     uvicorn.run(
         "main:app",
         host="0.0.0.0",
         port=8000,
-        reload=True,
+        reload=False if is_windows else True,  # Disable reload on Windows
         log_level="info"
     )
+    
+    if is_windows:
+        print("\n⚠️  Note: Auto-reload disabled on Windows. Restart server manually after code changes.")
