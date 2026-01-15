@@ -14,9 +14,19 @@ Pillow>=10.0.0
 # Face Detection (YOLO)
 ultralytics>=8.1.0
 
-# Face Recognition (DeepFace with ArcFace)
+# Face Recognition (DeepFace with multiple models)
 deepface>=0.0.89
 tf-keras>=2.15.0
+
+# Required for DeepFace multi-model support
+scipy>=1.10.0
+
+# Optional: Advanced face alignment (improves accuracy)
+# dlib>=19.24.0  # Uncomment for better face alignment
+# Note: dlib requires CMake and C++ compiler
+
+# Optional: MediaPipe for robust face detection (highly recommended)
+# mediapipe>=0.10.0  # Uncomment for better face detection
 
 # Optional: For better performance
 # tensorflow>=2.15.0  # Uncomment if needed
