@@ -2,7 +2,7 @@
 import { useState, useRef, useCallback, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
-import { Shield, Camera, CheckCircle, AlertCircle, Loader2 } from "lucide-react"
+import { Shield, Camera, CheckCircle, AlertCircle, Loader2, RefreshCcw } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
 import { toast } from "sonner"
 import Webcam from "react-webcam"
@@ -13,6 +13,9 @@ export default function VerifyFacePage() {
   const [verifying, setVerifying] = useState(false)
   const [verificationStatus, setVerificationStatus] = useState<'idle' | 'success' | 'failed'>('idle')
   const [verificationDetails, setVerificationDetails] = useState<any>(null)
+  const [facingMode, setFacingMode] = useState<"user" | "environment">("user")
+  const [devices, setDevices] = useState<MediaDeviceInfo[]>([])
+  const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null)
   const webcamRef = useRef<Webcam>(null)
   const { user } = useAuth()
   const router = useRouter()
@@ -22,6 +25,24 @@ export default function VerifyFacePage() {
       router.push('/login')
     }
   }, [user, router])
+
+  // Fetch available video devices
+  const handleDevices = useCallback(
+    (mediaDevices: MediaDeviceInfo[]) => {
+      const videoDevices = mediaDevices.filter(({ kind }) => kind === "videoinput")
+      setDevices(videoDevices)
+
+      // Default to first device or user preference if needed
+      if (videoDevices.length > 0 && !selectedDeviceId) {
+        setSelectedDeviceId(videoDevices[0].deviceId)
+      }
+    },
+    [selectedDeviceId]
+  );
+
+  useEffect(() => {
+    navigator.mediaDevices.enumerateDevices().then(handleDevices);
+  }, [handleDevices]);
 
   const captureImage = useCallback(() => {
     if (webcamRef.current) {
@@ -37,6 +58,10 @@ export default function VerifyFacePage() {
     setCapturedImage(null)
     setVerificationStatus('idle')
     setVerificationDetails(null)
+  }
+
+  const handleDeviceChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
+    setSelectedDeviceId(event.target.value)
   }
 
   const verifyFace = async () => {
@@ -62,7 +87,7 @@ export default function VerifyFacePage() {
         setVerificationStatus('success')
         setVerificationDetails(data)
         toast.success(`Face verified! ${data.similarity_percentage}% match`)
-        
+
         // Redirect to dashboard after successful verification
         setTimeout(() => {
           router.push('/dashboard')
@@ -114,29 +139,49 @@ export default function VerifyFacePage() {
           <div className="mb-6">
             <div className="relative rounded-xl overflow-hidden bg-black aspect-video">
               {!capturedImage ? (
-                <Webcam
-                  ref={webcamRef}
-                  audio={false}
-                  screenshotFormat="image/jpeg"
-                  className="w-full h-full object-cover"
-                  mirrored={true}
-                  onUserMedia={() => setCapturing(true)}
-                  onUserMediaError={(err) => {
-                    console.error('Webcam error:', err)
-                    toast.error("Failed to access camera. Please allow camera permissions.")
-                  }}
-                />
+                <>
+                  <Webcam
+                    ref={webcamRef}
+                    audio={false}
+                    screenshotFormat="image/jpeg"
+                    className="w-full h-full object-cover"
+                    mirrored={devices.find(d => d.deviceId === selectedDeviceId)?.label?.toLowerCase().includes('front') || false}
+                    videoConstraints={selectedDeviceId ? { deviceId: { exact: selectedDeviceId } } : { facingMode: 'user' }}
+                    onUserMedia={() => setCapturing(true)}
+                    onUserMediaError={(err) => {
+                      console.error('Webcam error:', err)
+                      toast.error("Failed to access camera. Please allow camera permissions.")
+                    }}
+                  />
+
+                  {/* Camera Selection Dropdown */}
+                  {devices.length > 1 && (
+                    <div className="absolute top-4 right-4 z-20">
+                      <select
+                        value={selectedDeviceId || ''}
+                        onChange={handleDeviceChange}
+                        className="bg-black/60 text-white text-sm rounded-lg px-3 py-2 border border-white/20 backdrop-blur-sm outline-none focus:border-teal-500 cursor-pointer"
+                      >
+                        {devices.map((device, key) => (
+                          <option key={key} value={device.deviceId} className="bg-slate-900 text-white">
+                            {device.label || `Camera ${key + 1}`}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </>
               ) : (
-                <img 
-                  src={capturedImage} 
-                  alt="Captured" 
+                <img
+                  src={capturedImage}
+                  alt="Captured"
                   className="w-full h-full object-cover"
                 />
               )}
 
               {/* Overlay guide */}
               {!capturedImage && (
-                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
                   <div className="w-64 h-80 border-4 border-teal-500 rounded-3xl opacity-50"></div>
                 </div>
               )}
@@ -145,11 +190,10 @@ export default function VerifyFacePage() {
 
           {/* Verification Status */}
           {verificationStatus !== 'idle' && (
-            <div className={`mb-6 p-4 rounded-xl border ${
-              verificationStatus === 'success' 
-                ? 'bg-green-50 border-green-200 text-green-700'
-                : 'bg-red-50 border-red-200 text-red-700'
-            }`}>
+            <div className={`mb-6 p-4 rounded-xl border ${verificationStatus === 'success'
+              ? 'bg-green-50 border-green-200 text-green-700'
+              : 'bg-red-50 border-red-200 text-red-700'
+              }`}>
               <div className="flex items-center gap-3">
                 {verificationStatus === 'success' ? (
                   <>
