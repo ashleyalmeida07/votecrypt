@@ -7,6 +7,7 @@ import {
     computeMerkleRoot,
     bigIntToHex
 } from '@/lib/zkp'
+import { isZkpEnabled, writeZkpContract } from '@/lib/contract'
 
 export const dynamic = 'force-dynamic'
 
@@ -132,8 +133,29 @@ export async function POST(request: Request) {
             WHERE election_id = ${electionId}
         `
 
+        // Sync commitment to on-chain ZKP contract
+        // This is CRITICAL: Without this, the contract merkle root will match, 
+        // but the contract won't have the commitments to rebuild it if needed,
+        // (though technically only root matters for verification, some implementations verify inclusion).
+        // Actually, for this contract, we used:
+        // function addVoterCommitment(bytes32 _commitment)
+        // This is needed so valid voters are on-chain.
+
+        // function addVoterCommitment(bytes32 _commitment)
+        // This is needed so valid voters are on-chain.
+
+        if (isZkpEnabled()) {
+            try {
+                console.log(`🔗 Adding voter commitment to ZKP contract...`)
+                await writeZkpContract('addVoterCommitment', [commitment as `0x${string}`])
+                console.log('✅ Voter commitment added on-chain')
+            } catch (chainError: any) {
+                console.error('⚠️ Failed to add commitment on-chain:', chainError.message)
+            }
+        }
+
         // 9. Sync Merkle Root to Blockchain immediately
-        const { isZkpEnabled, writeZkpContract } = await import('@/lib/contract')
+
         if (isZkpEnabled()) {
             try {
                 console.log(`🔗 Syncing new Merkle Root to chain: ${rootHex}`)

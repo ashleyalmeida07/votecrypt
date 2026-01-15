@@ -12,12 +12,26 @@ export async function POST() {
 
         // FIX: If ZKP is enabled, we MUST read from the ZKP Contract to get the anonymous vote counts.
         // The Main Contract will have 0 votes (since we are voting on ZKP contract).
+        // FIX: If ZKP is enabled, we MUST read from the ZKP Contract to get the anonymous vote counts.
+        // The Main Contract will have 0 votes (since we are voting on ZKP contract).
         const { isZkpEnabled } = await import('@/lib/contract')
+
+        // Priority:
+        // 1. ZKP Contract Address from Election DB (if we start saving it there)
+        // 2. ZKP Contract Address from Env (fallback)
+        // 3. Main Contract Address (legacy/fallback)
+
         if (isZkpEnabled()) {
-            const zkpAddr = process.env.ZKP_CONTRACT_ADDR as `0x${string}`
-            if (zkpAddr) {
-                console.log('🔄 Syncing from ZKP Contract:', zkpAddr)
-                contractAddress = zkpAddr
+            // Cast to any to access zkp_contract_address if it exists on the type
+            const zkpAddrFromDb = (latestElection as any)?.zkp_contract_address
+            const zkpAddrFromEnv = process.env.ZKP_CONTRACT_ADDR as `0x${string}`
+
+            if (zkpAddrFromDb) {
+                console.log('🔄 Syncing from ZKP Contract (DB):', zkpAddrFromDb)
+                contractAddress = zkpAddrFromDb
+            } else if (zkpAddrFromEnv) {
+                console.log('🔄 Syncing from ZKP Contract (Env):', zkpAddrFromEnv)
+                contractAddress = zkpAddrFromEnv
             }
         }
 

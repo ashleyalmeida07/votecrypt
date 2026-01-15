@@ -7,6 +7,8 @@ import {
     getElectionState,
     getElectionOfficial,
     ElectionState,
+    writeZkpContract,
+    isZkpEnabled,
 } from '@/lib/contract'
 
 // GET: Get all candidates from DB (Fast, Single Source of Truth for Metadata)
@@ -66,32 +68,53 @@ export async function POST(request: Request) {
         console.log(`🔗 Submitting anonymized candidate to chain: ${anonymizedName}`)
 
         let hash = 'pending_tx'
+        let mainContractError = null
+
         try {
             hash = await writeContractWithRetry('addCandidate', [anonymizedName, anonymizedParty])
             console.log('✅ Blockchain Tx Sent:', hash)
         } catch (chainError: any) {
-            console.error('❌ Blockchain submission failed:', chainError.message)
-            return NextResponse.json({
-                error: 'Blockchain rejection: ' + chainError.message
-            }, { status: 500 })
+            console.error('❌ Main Contract submission failed:', chainError.message)
+            mainContractError = chainError.message
+            // We continue to ZKP sync instead of returning error immediately
+        }
+
+        // 2b. Sync to ZKP Contract if enabled
+        let zkpHash = null
+        if (isZkpEnabled()) {
+            try {
+                console.log('🔗 Syncing candidate to ZKP contract...')
+                zkpHash = await writeZkpContract('addCandidate', [anonymizedName, anonymizedParty])
+                console.log('✅ ZKP candidate sync complete:', zkpHash)
+            } catch (zkpError: any) {
+                console.error('⚠️ ZKP candidate sync failed:', zkpError.message)
+                // If BOTH failed, then we have a problem
+                if (mainContractError) {
+                    return NextResponse.json({
+                        error: `Blockchain rejection (Main: ${mainContractError}, ZKP: ${zkpError.message})`
+                    }, { status: 500 })
+                }
+            }
         }
 
         // 3. Save to DB with Election Scope
         const newCandidate = await addCandidateToDb(
             name,
             party,
-            hash,
+            zkpHash || hash, // Prefer ZKP hash if available and main failed, or just keep original logic
             nextBlockchainId,
             latestElection?.id
         )
 
-        await logTransaction('addCandidate', hash, { name, party, anonymizedName, electionId: latestElection?.id })
+        await logTransaction('addCandidate', zkpHash || hash, { name, party, anonymizedName, electionId: latestElection?.id })
 
         return NextResponse.json({
             success: true,
             candidate: newCandidate,
-            transactionHash: hash,
-            message: `Candidate "${name}" added! (On-chain as "${anonymizedName}")`
+            transactionHash: zkpHash || hash,
+            message: `Candidate "${name}" added!`,
+            warning: mainContractError ? `Main Contract Sync Failed: ${mainContractError}` : undefined,
+            zkpSynced: !!zkpHash
         })
 
     } catch (error: any) {
