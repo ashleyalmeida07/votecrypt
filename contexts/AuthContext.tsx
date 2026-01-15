@@ -14,7 +14,7 @@ import { auth, googleProvider, RecaptchaVerifier, signInWithPhoneNumber } from '
 interface AuthContextType {
   user: User | null;
   loading: boolean;
-  signInWithGoogle: () => Promise<void>;
+  signInWithGoogle: () => Promise<any>;
   signInWithPhone: (phoneNumber: string, recaptchaVerifier: any) => Promise<ConfirmationResult>;
   signOut: () => Promise<void>;
 }
@@ -62,7 +62,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signInWithGoogle = async () => {
     try {
-      await signInWithPopup(auth, googleProvider);
+      const result = await signInWithPopup(auth, googleProvider);
+      return result;
     } catch (error) {
       console.error('Error signing in with Google:', error);
       throw error;

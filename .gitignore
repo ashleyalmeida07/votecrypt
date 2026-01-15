@@ -29,4 +29,18 @@ next-env.d.ts
 # Solidity
 Solidity/artifacts
 
+# Python virtual environments
 .venv
+venv/
+env/
+ENV/
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.log
+.Python
+backend/__pycache__/
+backend/*.log
+backend/venv/
