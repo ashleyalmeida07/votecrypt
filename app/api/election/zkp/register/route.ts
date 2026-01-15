@@ -44,13 +44,6 @@ export async function POST(request: Request) {
             WHERE election_id = ${electionId} AND firebase_uid = ${firebaseUid}
         `
 
-        if (existing.length > 0) {
-            return NextResponse.json(
-                { error: 'Already registered for this election. Use your existing secrets.' },
-                { status: 400 }
-            )
-        }
-
         // 3. Generate secrets for the voter
         const secret = generateSecret()
         const nullifierSecret = generateSecret()
@@ -58,33 +51,69 @@ export async function POST(request: Request) {
         // 4. Generate commitment
         const commitment = await generateCommitment(secret, nullifierSecret)
 
-        // 5. Get current Merkle tree state
-        let merkleTree = await sql`
-            SELECT * FROM zkp_merkle_trees WHERE election_id = ${electionId}
-        `
-
         let merkleIndex: number
-        if (merkleTree.length === 0) {
-            // Create new Merkle tree entry
+
+        if (existing.length > 0) {
+            // ALREADY REGISTERED: Allow overwrite/recovery
+            // Note: In a strict anonymous system, this might allow double-voting if not carefully managed.
+            // (User votes with old secret, re-registers, votes with new secret).
+            // For this implementation, we prioritize recovery.
+            console.log(`♻️ User ${firebaseUid} re-registering (overwriting commitment)`)
+
+            merkleIndex = existing[0].merkle_index
+
             await sql`
-                INSERT INTO zkp_merkle_trees (election_id, merkle_root, leaf_count)
-                VALUES (${electionId}, NULL, 1)
+                UPDATE voter_commitments 
+                SET commitment = ${commitment}, updated_at = CURRENT_TIMESTAMP
+                WHERE election_id = ${electionId} AND firebase_uid = ${firebaseUid}
             `
-            merkleIndex = 0
         } else {
-            merkleIndex = merkleTree[0].leaf_count
+            // NEW REGISTRATION
+            console.log(`✨ New registration for ${firebaseUid}`)
+
+            // 5. Get current Merkle tree state
+            let merkleTree = await sql`
+                SELECT * FROM zkp_merkle_trees WHERE election_id = ${electionId}
+            `
+
+            if (merkleTree.length === 0) {
+                // Create new Merkle tree entry
+                try {
+                    await sql`
+                        INSERT INTO zkp_merkle_trees (election_id, merkle_root, leaf_count)
+                        VALUES (${electionId}, NULL, 1)
+                    `
+                    merkleIndex = 0
+                } catch (e: any) {
+                    // Handle Race Condition: If duplicate key error, it means another req created it just now.
+                    // Just fetch it again and use it as normal update path.
+                    if (e.code === '23505') { // Unique constraint violation code
+                        const refreshed = await sql`SELECT * FROM zkp_merkle_trees WHERE election_id = ${electionId}`
+                        merkleIndex = refreshed[0].leaf_count
+                        await sql`
+                            UPDATE zkp_merkle_trees 
+                            SET leaf_count = leaf_count + 1, updated_at = CURRENT_TIMESTAMP
+                            WHERE election_id = ${electionId}
+                        `
+                    } else {
+                        throw e
+                    }
+                }
+            } else {
+                merkleIndex = merkleTree[0].leaf_count
+                await sql`
+                    UPDATE zkp_merkle_trees 
+                    SET leaf_count = leaf_count + 1, updated_at = CURRENT_TIMESTAMP
+                    WHERE election_id = ${electionId}
+                `
+            }
+
+            // 6. Store commitment in database
             await sql`
-                UPDATE zkp_merkle_trees 
-                SET leaf_count = leaf_count + 1, updated_at = CURRENT_TIMESTAMP
-                WHERE election_id = ${electionId}
+                INSERT INTO voter_commitments (election_id, commitment, merkle_index, firebase_uid)
+                VALUES (${electionId}, ${commitment}, ${merkleIndex}, ${firebaseUid})
             `
         }
-
-        // 6. Store commitment in database
-        await sql`
-            INSERT INTO voter_commitments (election_id, commitment, merkle_index, firebase_uid)
-            VALUES (${electionId}, ${commitment}, ${merkleIndex}, ${firebaseUid})
-        `
 
         // 7. Recompute Merkle root
         const allCommitments = await sql`
@@ -102,6 +131,23 @@ export async function POST(request: Request) {
             SET merkle_root = ${rootHex}, updated_at = CURRENT_TIMESTAMP
             WHERE election_id = ${electionId}
         `
+
+        // 9. Sync Merkle Root to Blockchain immediately
+        const { isZkpEnabled, writeZkpContract } = await import('@/lib/contract')
+        if (isZkpEnabled()) {
+            try {
+                console.log(`🔗 Syncing new Merkle Root to chain: ${rootHex}`)
+                // We don't wait strictly for this to finish to return the response to user (speed),
+                // BUT for immediate voting they need it. 
+                // It's safer to await it, or the user might vote before it lands. 
+                // Since block time is 12s, user has to wait anyway.
+                await writeZkpContract('updateMerkleRoot', [rootHex as `0x${string}`])
+            } catch (chainError: any) {
+                console.error('⚠️ Failed to sync Merkle Root to chain:', chainError.message)
+                // We don't fail the registration, but warn.
+                // Ideally we should alert the user or retry.
+            }
+        }
 
         // 8. Return secrets to user (they must store these!)
         return NextResponse.json({

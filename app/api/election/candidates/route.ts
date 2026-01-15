@@ -10,7 +10,7 @@ import {
 } from '@/lib/contract'
 
 // GET: Get all candidates from DB (Fast, Single Source of Truth for Metadata)
-import { getCandidatesFromDb, addCandidateToDb, logTransaction, updateCandidateVoteCount, getLatestElection } from '@/lib/db'
+import { getCandidatesFromDb, addCandidateToDb, logTransaction, getLatestElection } from '@/lib/db'
 import { writeContractWithRetry, getCandidateCount } from '@/lib/contract'
 
 export async function GET() {

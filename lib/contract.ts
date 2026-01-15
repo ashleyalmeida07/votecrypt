@@ -183,9 +183,11 @@ export function isZkpEnabled(): boolean {
 }
 
 // Write to ZKP contract with retry
-export async function writeZkpContract(functionName: string, args: any[] = []) {
-    if (!ZKP_CONTRACT_ADDR) {
-        throw new Error('ZKP_CONTRACT_ADDR not configured in environment')
+export async function writeZkpContract(functionName: string, args: any[] = [], contractAddress?: `0x${string}`) {
+    const targetAddress = contractAddress || ZKP_CONTRACT_ADDR
+
+    if (!targetAddress) {
+        throw new Error('No ZKP contract address configured')
     }
 
     const walletClient = getWalletClient()
@@ -199,10 +201,10 @@ export async function writeZkpContract(functionName: string, args: any[] = []) {
                 blockTag: 'pending'
             })
 
-            console.log(`📝 ZKP Contract: ${functionName} with nonce ${nonce}`)
+            console.log(`📝 ZKP Contract (${functionName}) -> ${targetAddress} with nonce ${nonce}`)
 
             const hash = await walletClient.writeContract({
-                address: ZKP_CONTRACT_ADDR,
+                address: targetAddress,
                 abi: zkpAbi,
                 functionName,
                 args,
@@ -271,14 +273,16 @@ export async function getCandidateCount(): Promise<number> {
 }
 
 // Helper: Get candidate by ID
-export async function getCandidate(id: number): Promise<{
+export async function getCandidate(id: number, contractAddress?: `0x${string}`): Promise<{
     id: number
     name: string
     party: string
     voteCount: number
 }> {
+    const config = contractAddress ? { ...contractConfig, address: contractAddress } : contractConfig
+
     const result = await publicClient.readContract({
-        ...contractConfig,
+        ...config,
         functionName: 'getCandidate',
         args: [BigInt(id)],
     })
@@ -294,12 +298,20 @@ export async function getCandidate(id: number): Promise<{
 }
 
 // Helper: Get all candidates
-export async function getAllCandidates() {
-    const count = await getCandidateCount()
+export async function getAllCandidates(contractAddress?: `0x${string}`) {
+    // We need to get the count from the specific contract too
+    const config = contractAddress ? { ...contractConfig, address: contractAddress } : contractConfig
+
+    const count = await publicClient.readContract({
+        ...config,
+        functionName: 'getCandidateCount',
+    })
+
     const candidates = []
 
-    for (let i = 0; i < count; i++) {
-        const candidate = await getCandidate(i)
+    for (let i = 0; i < Number(count); i++) {
+        // Pass the address down
+        const candidate = await getCandidate(i, contractAddress)
         candidates.push(candidate)
     }
 

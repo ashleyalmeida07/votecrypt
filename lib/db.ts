@@ -184,9 +184,17 @@ export async function initDatabase() {
                 merkle_index INTEGER NOT NULL,
                 firebase_uid VARCHAR(255),
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP,
                 UNIQUE(election_id, commitment)
             )
         `
+
+        // Migration: Add updated_at to voter_commitments if missing
+        try {
+            await sql`ALTER TABLE voter_commitments ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP`
+        } catch (e) {
+            console.log('Migration note (voter_commitments):', e)
+        }
 
         // Used nullifiers (double-spend protection)
         await sql`
@@ -257,12 +265,20 @@ export async function getCandidatesFromDb(electionId?: number) {
     return await sql`SELECT * FROM candidates ORDER BY id ASC`
 }
 
-export async function updateCandidateVoteCount(blockchainId: number, voteCount: number) {
-    await sql`
-        UPDATE candidates 
-        SET vote_count = ${voteCount}, updated_at = CURRENT_TIMESTAMP
-        WHERE blockchain_id = ${blockchainId}
-    `
+export async function updateCandidateVoteCount(blockchainId: number, voteCount: number, electionId: number | null) {
+    if (electionId !== null) {
+        await sql`
+            UPDATE candidates 
+            SET vote_count = ${voteCount}, updated_at = CURRENT_TIMESTAMP
+            WHERE blockchain_id = ${blockchainId} AND election_id = ${electionId}
+        `
+    } else {
+        await sql`
+            UPDATE candidates 
+            SET vote_count = ${voteCount}, updated_at = CURRENT_TIMESTAMP
+            WHERE blockchain_id = ${blockchainId} AND election_id IS NULL
+        `
+    }
 }
 
 // Voter operations (blockchain)
@@ -362,6 +378,10 @@ export async function updateElectionState(state: string, contractAddress?: strin
             WHERE id = ${id}
         `
     }
+
+    // Return updated record
+    const updated = await sql`SELECT * FROM elections WHERE id = ${id}`
+    return updated[0]
 }
 
 export { sql }

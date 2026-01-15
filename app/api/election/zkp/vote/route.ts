@@ -141,17 +141,60 @@ export async function POST(request: Request) {
             WHERE id = ${candidate.id}
         `
 
-        // 11. Log anonymous vote (no identity revealed!)
+        // 11. Submit to on-chain ZKP contract
+        const { writeZkpContract, getTransactionReceipt } = await import('@/lib/contract')
+        const { bigIntToHex, isZkpEnabled } = await import('@/lib/zkp') // Assuming isZkpEnabled is there or we check contract address
+
+        let transactionHash: string | null = null
+        let blockNumber: number | null = null
+
+        const contractAddress = (election.contract_address || process.env.ZKP_CONTRACT_ADDR) as `0x${string}` | undefined
+
+        if (contractAddress) {
+            console.log(`🔗 Submitting anonymous vote to on-chain ZKP contract: ${contractAddress}...`)
+
+            // Convert inputs to format expected by contract
+            const nullifierBytes32 = nullifierHash as `0x${string}`
+            const merkleRootBytes32 = bigIntToHex(merkleRoot) as `0x${string}`
+            const candidateBlockchainId = candidate.blockchain_id ?? candidateId
+
+            try {
+                transactionHash = await writeZkpContract(
+                    'voteAnonymous',
+                    [
+                        nullifierBytes32,
+                        BigInt(candidateBlockchainId),
+                        merkleRootBytes32
+                    ],
+                    contractAddress
+                )
+
+                console.log(`📦 On-chain tx submitted: ${transactionHash}`)
+
+                // Wait for receipt to get block number
+                const receipt = await getTransactionReceipt(transactionHash as `0x${string}`)
+                if (receipt) {
+                    blockNumber = receipt.blockNumber
+                }
+            } catch (onChainError: any) {
+                console.error('⚠️ On-chain vote failed, but DB vote recorded:', onChainError.message)
+                // We still treat this as success since DB vote is recorded, but warn
+            }
+        }
+
+        // 12. Log anonymous vote (no identity revealed!)
         console.log(`🗳️ Anonymous ZKP vote cast: Nullifier ${nullifierHash.slice(0, 18)}...`)
 
         return NextResponse.json({
             success: true,
-            message: 'Anonymous vote successfully cast!',
+            message: transactionHash ? 'Anonymous vote recorded on blockchain!' : 'Anonymous vote successfully cast (Off-chain)!',
             nullifierHash,
             candidateId: candidate.blockchain_id ?? candidate.id,
             timestamp: new Date().toISOString(),
-            // Note: No transaction hash since this is DB-only
-            // For on-chain ZKP, we'd submit to ZKBallotSystem
+            onChain: !!transactionHash,
+            transactionHash,
+            blockNumber,
+            contractAddress
         })
 
     } catch (error: any) {

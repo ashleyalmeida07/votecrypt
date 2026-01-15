@@ -5,12 +5,24 @@ import { sql, getLatestElection } from '@/lib/db'
 // POST: Sync candidates from blockchain to database (Election-Scoped)
 export async function POST() {
     try {
-        // Get all candidates from blockchain
-        const blockchainCandidates = await getAllCandidates()
-
-        // Get current election ID
+        // Get current election ID first to know which contract to check
         const latestElection = await getLatestElection()
         const electionId = latestElection?.id ?? null
+        let contractAddress = latestElection?.contract_address as `0x${string}` | undefined
+
+        // FIX: If ZKP is enabled, we MUST read from the ZKP Contract to get the anonymous vote counts.
+        // The Main Contract will have 0 votes (since we are voting on ZKP contract).
+        const { isZkpEnabled } = await import('@/lib/contract')
+        if (isZkpEnabled()) {
+            const zkpAddr = process.env.ZKP_CONTRACT_ADDR as `0x${string}`
+            if (zkpAddr) {
+                console.log('🔄 Syncing from ZKP Contract:', zkpAddr)
+                contractAddress = zkpAddr
+            }
+        }
+
+        // Get all candidates from blockchain
+        const blockchainCandidates = await getAllCandidates(contractAddress)
 
         let synced = 0
         let updated = 0
@@ -76,12 +88,13 @@ export async function POST() {
 // GET: Sync candidates from blockchain to database (browser-friendly, Election-Scoped)
 export async function GET() {
     try {
-        // Get all candidates from blockchain
-        const blockchainCandidates = await getAllCandidates()
-
-        // Get current election ID
+        // Get current election ID first
         const latestElection = await getLatestElection()
         const electionId = latestElection?.id ?? null
+        const contractAddress = latestElection?.contract_address as `0x${string}` | undefined
+
+        // Get all candidates from blockchain
+        const blockchainCandidates = await getAllCandidates(contractAddress)
 
         let synced = 0
         let updated = 0
