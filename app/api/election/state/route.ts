@@ -3,6 +3,8 @@ import { privateKeyToAccount } from 'viem/accounts'
 import { updateElectionState, sql } from '@/lib/db'
 import {
     writeContractWithRetry,
+    writeZkpContract,
+    isZkpEnabled,
     getElectionState,
     getElectionOfficial,
     ElectionState,
@@ -76,6 +78,66 @@ export async function POST(request: Request) {
                 hash = await writeContractWithRetry(fn, [])
             }
             console.log(`✅ Blockchain State Sync (${action}):`, hash)
+
+            // 3. Sync to ZKP Contract (if enabled)
+            if (isZkpEnabled()) {
+                try {
+                    let zkpHash = 'pending_zkp'
+                    if (action === 'newElection') {
+                        // ZKP contract likely needs deployment per election or uses startNewElection too? 
+                        // The current ZKBallotSystem doesn't seem to have startNewElection in the snippet I saw, 
+                        // it uses Constructor for new election? Or maybe it's a singleton?
+                        // Let's assume for now it has similar state functions, or we skip 'newElection' if it's per-deployment.
+                        // Checking ZKBallotSystem.sol... it has startElection/endElection.
+                        // It does NOT have startNewElection used in BallotSystem.sol.
+                        // It effectively supports one election per deployment based on constructor? 
+                        // Or maybe we treat it as "reset" if we deploy new?
+                        // For 'start' and 'end', it matches.
+                        console.log('Skipping ZKP sync for newElection - requires redeployment or separate handling')
+                    } else {
+                        const zkpFn = action === 'start' ? 'startElection' : 'endElection'
+
+                        // If starting, we MUST sync the Merkle root and commitments first
+                        if (action === 'start') {
+                            console.log('🔄 Syncing ZKP Merkle Tree before starting...')
+
+                            // 1. Get Merkle Root
+                            const tree = await sql`SELECT merkle_root FROM zkp_merkle_trees ORDER BY id DESC LIMIT 1`
+                            if (tree.length > 0 && tree[0].merkle_root) {
+                                const root = tree[0].merkle_root as string
+                                console.log('Syncing Root:', root)
+                                const rootHash = await writeZkpContract('updateMerkleRoot', [root as `0x${string}`])
+                                console.log('✅ Root synced:', rootHash)
+                            }
+
+                            // 2. Get Commitments (Sync all to be safe, or just ensure > 0)
+                            const commitments = await sql`SELECT commitment FROM voter_commitments ORDER BY merkle_index ASC`
+                            if (commitments.length > 0) {
+                                console.log(`Syncing ${commitments.length} commitments...`)
+                                // For now, simple loop. In prod, batch or check existing.
+                                // We just need count > 0 for startElection, but let's try to sync.
+                                // To save time/gas on re-runs, maybe only sync if we suspect they are missing?
+                                // Since we catch errors, let's just try adding the first one if we can't check count easily.
+                                // Better: Sync ALL for correctness.
+                                for (const c of commitments) {
+                                    try {
+                                        await writeZkpContract('addVoterCommitment', [c.commitment as `0x${string}`])
+                                    } catch (e) {
+                                        // Ignore "already exists" or other errors to keep moving
+                                        console.log('Commitment sync note:', (e as any).shortMessage || 'Failed/Skipped')
+                                    }
+                                }
+                            }
+                        }
+
+                        zkpHash = await writeZkpContract(zkpFn, [])
+                        console.log(`✅ ZKP Contract State Sync (${action}):`, zkpHash)
+                    }
+                } catch (zkpError: any) {
+                    console.error(`⚠️ ZKP Contract sync failed for ${action}:`, zkpError.message)
+                    // Don't fail the whole request, just log
+                }
+            }
         } catch (chainError: any) {
             console.error(`⚠️ Blockchain sync failed for ${action}:`, chainError.message)
             // We continue because user wants "Store all this in DB only".

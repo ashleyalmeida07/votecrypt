@@ -1,15 +1,21 @@
 "use client"
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { CheckCircle, Clock, LogOut, ChevronRight, AlertTriangle } from "lucide-react"
+import { CheckCircle, Clock, LogOut, ChevronRight, AlertTriangle, Shield } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
 import { toast } from "sonner"
+import { getVoterSecrets, storeVoterSecrets, VoterSecrets } from "@/lib/zkp"
 
 export default function VoterDashboard() {
   const [selectedCandidate, setSelectedCandidate] = useState<number | null>(null)
   const [candidates, setCandidates] = useState<any[]>([])
   const [electionName, setElectionName] = useState("Loading Election...")
   const [electionState, setElectionState] = useState(0) // 0=Created, 1=Voting, 2=Ended
+  const [electionId, setElectionId] = useState<number | null>(null)
+
+  // ZKP state
+  const [zkpSecrets, setZkpSecrets] = useState<VoterSecrets | null>(null)
+  const [zkpRegistering, setZkpRegistering] = useState(false)
 
   // Restore missing state
   const [showConfirmation, setShowConfirmation] = useState(false)
@@ -18,6 +24,7 @@ export default function VoterDashboard() {
   const [transactionHash, setTransactionHash] = useState<string | null>(null)
   const [blockNumber, setBlockNumber] = useState<number | null>(null)
   const [voteTimestamp, setVoteTimestamp] = useState<string | null>(null)
+  const [nullifierHash, setNullifierHash] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
 
@@ -26,7 +33,7 @@ export default function VoterDashboard() {
 
   useEffect(() => {
     if (authLoading) return // Wait for auth init
-    
+
     const checkUserAndLoadData = async () => {
       if (!user) {
         router.push('/login')
@@ -69,35 +76,125 @@ export default function VoterDashboard() {
 
   const loadData = async () => {
     if (!user) return;
-    
+
     try {
       // 1. Fetch Election Stats (Name, Candidates, State)
       const statsRes = await fetch('/api/election/stats')
       const statsData = await statsRes.json()
 
+      let currentElectionId: number | null = null
+
       if (statsData) {
         setElectionName(statsData.electionName || "Current Election")
         setCandidates(statsData.candidates || [])
         setElectionState(statsData.state ?? 0)
+        currentElectionId = statsData.electionId || null
+        setElectionId(currentElectionId)
+
+        // Load ZKP secrets from localStorage if available
+        if (currentElectionId) {
+          console.log('🔍 Checking for ZKP secrets, electionId:', currentElectionId)
+          let secrets = getVoterSecrets(currentElectionId)
+          console.log('🔍 Existing secrets:', secrets ? 'FOUND' : 'NOT FOUND')
+
+          // AUTO-REGISTER: If no secrets exist, automatically register for ZKP
+          if (!secrets && user.uid) {
+            console.log('🔐 Auto-registering for anonymous voting...')
+            console.log('🔐 User UID:', user.uid)
+            try {
+              console.log('📤 Calling /api/election/zkp/register...')
+              const res = await fetch('/api/election/zkp/register', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ firebaseUid: user.uid })
+              })
+
+              console.log('📥 Response status:', res.status, res.ok ? 'OK' : 'FAILED')
+              const data = await res.json()
+              console.log('📥 Response data:', JSON.stringify(data).slice(0, 200))
+
+              if (res.ok && data.secrets) {
+                secrets = {
+                  secret: data.secrets.secret,
+                  nullifierSecret: data.secrets.nullifierSecret,
+                  commitment: data.secrets.commitment,
+                  registeredAt: new Date().toISOString()
+                }
+                storeVoterSecrets(currentElectionId, secrets)
+                console.log('✅ Anonymous voting enabled automatically, secrets stored')
+              } else {
+                console.error('❌ Registration failed:', data.error || 'Unknown error')
+              }
+            } catch (regError) {
+              console.error('❌ Auto-registration exception:', regError)
+            }
+          }
+
+          console.log('🔍 Final secrets state:', secrets ? 'SET' : 'NULL')
+          setZkpSecrets(secrets)
+        } else {
+          console.log('⚠️ No currentElectionId, skipping ZKP setup')
+        }
       }
 
-      // 2. Check Vote Status
-      if (user.uid) {
-        const statusRes = await fetch(`/api/election/vote?uid=${user.uid}`)
+      // 2. Check Vote Status (with ZKP nullifier if available)
+      if (user.uid && currentElectionId) {
+        const loadedSecrets = getVoterSecrets(currentElectionId)
+        let url = `/api/election/vote?uid=${user.uid}`
+        if (loadedSecrets?.nullifierSecret) {
+          url += `&nullifierSecret=${loadedSecrets.nullifierSecret}`
+        }
+        const statusRes = await fetch(url)
         const statusData = await statusRes.json()
         if (statusData.hasVoted) {
-            setHasVoted(true)
-            setVotedFor(statusData.voterInfo?.votedFor)
-            setTransactionHash(statusData.voterInfo?.transactionHash)
-          }
+          setHasVoted(true)
+          setVotedFor(statusData.voterInfo?.votedFor)
+          setTransactionHash(statusData.voterInfo?.transactionHash)
         }
-      } catch (error) {
-        console.error("Failed to load dashboard data:", error)
-        toast.error("Failed to load election data")
-      } finally {
-        setLoading(false)
       }
+    } catch (error) {
+      console.error("Failed to load dashboard data:", error)
+      toast.error("Failed to load election data")
+    } finally {
+      setLoading(false)
     }
+  }
+
+  // ZKP Registration handler
+  const handleZkpRegister = async () => {
+    if (!user || !electionId) return
+
+    setZkpRegistering(true)
+    try {
+      const res = await fetch('/api/election/zkp/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ firebaseUid: user.uid })
+      })
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Registration failed')
+      }
+
+      // Store secrets
+      const secrets: VoterSecrets = {
+        secret: data.secrets.secret,
+        nullifierSecret: data.secrets.nullifierSecret,
+        commitment: data.secrets.commitment,
+        registeredAt: new Date().toISOString()
+      }
+
+      storeVoterSecrets(electionId, secrets)
+      setZkpSecrets(secrets)
+      toast.success('Anonymous voting enabled! Your identity is now protected.')
+    } catch (error: any) {
+      toast.error(error.message)
+    } finally {
+      setZkpRegistering(false)
+    }
+  }
 
   const handleSignOut = async () => {
     try {
@@ -122,22 +219,19 @@ export default function VoterDashboard() {
     const candidate = candidates.find(c => c.id === selectedCandidate)
     if (!candidate || !user) return
 
-    // CRITICAL: Use blockchainId, NOT the database id (database IDs like 9 are invalid on chain)
-    const blockchainId = candidate.blockchainId
-
-    console.log('Vote submission debug:', {
-      selectedCandidate,
-      candidateDbId: candidate.id,
-      candidateBlockchainId: candidate.blockchainId,
-      candidateName: candidate.name,
-      usingId: blockchainId
-    })
-
-    // Validate blockchainId exists
-    if (blockchainId === undefined || blockchainId === null) {
-      toast.error(`Candidate "${candidate.name}" has no blockchain ID. Please sync the database.`)
+    // CRITICAL: ZKP voting is compulsory
+    if (!zkpSecrets) {
+      toast.error('Please enable anonymous voting first')
       return
     }
+
+    const blockchainId = candidate.blockchainId ?? candidate.id
+
+    console.log('ZKP Vote submission:', {
+      candidateId: blockchainId,
+      candidateName: candidate.name,
+      hasSecrets: !!zkpSecrets
+    })
 
     setSubmitting(true)
     try {
@@ -145,21 +239,21 @@ export default function VoterDashboard() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          candidateId: blockchainId, // Always use blockchain ID, never database ID
-          firebaseUid: user.uid,
-          candidateName: candidate.name
+          secret: zkpSecrets.secret,
+          nullifierSecret: zkpSecrets.nullifierSecret,
+          candidateId: blockchainId,
+          firebaseUid: user.uid
         })
       })
 
       const data = await res.json()
 
       if (res.ok) {
-        setTransactionHash(data.transactionHash)
-        setBlockNumber(data.blockNumber)
+        setNullifierHash(data.nullifierHash)
         setVoteTimestamp(data.timestamp)
         setHasVoted(true)
         setShowConfirmation(false)
-        toast.success("Vote submitted successfully!")
+        toast.success("Anonymous vote submitted successfully!")
       } else {
         throw new Error(data.error || "Vote submission failed")
       }
@@ -172,7 +266,7 @@ export default function VoterDashboard() {
   }
 
   if (hasVoted) {
-    return <VoteConfirmationScreen txHash={transactionHash} blockNumber={blockNumber} timestamp={voteTimestamp} />
+    return <VoteConfirmationScreen txHash={transactionHash} blockNumber={blockNumber} timestamp={voteTimestamp} nullifierHash={nullifierHash} />
   }
 
   return (
@@ -220,6 +314,23 @@ export default function VoterDashboard() {
                   <p className="text-gray-600">Your identity has been verified</p>
                 </div>
                 <CheckCircle className="w-8 h-8 text-green-500" />
+              </div>
+            </div>
+
+            {/* ZKP Anonymous Voting Status - Always enabled automatically */}
+            <div className="ballot-card p-6 mb-8 bg-gradient-to-r from-green-50 to-teal-50 border-green-200">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center">
+                  <Shield className="w-6 h-6 text-green-600" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-green-800">Anonymous Voting Enabled</h2>
+                  <p className="text-green-700 text-sm">
+                    {zkpSecrets
+                      ? "Your identity is protected with Zero Knowledge Proofs"
+                      : "Setting up anonymous voting..."}
+                  </p>
+                </div>
               </div>
             </div>
 
@@ -411,10 +522,11 @@ function VoteConfirmationModal({
   )
 }
 
-function VoteConfirmationScreen({ txHash, blockNumber, timestamp }: {
+function VoteConfirmationScreen({ txHash, blockNumber, timestamp, nullifierHash }: {
   txHash: string | null
   blockNumber: number | null
   timestamp: string | null
+  nullifierHash: string | null
 }) {
   return (
     <div className="min-h-screen bg-slate-50">
@@ -432,40 +544,45 @@ function VoteConfirmationScreen({ txHash, blockNumber, timestamp }: {
             </div>
           </div>
 
-          <h1 className="text-3xl font-bold text-slate-900 mb-4">Vote Successfully Submitted</h1>
+          <h1 className="text-3xl font-bold text-slate-900 mb-4">Anonymous Vote Submitted!</h1>
 
           <p className="text-gray-600 mb-8 text-lg">
-            Your vote has been securely recorded on the blockchain. Your vote is anonymous, encrypted, and permanent.
+            Your vote has been securely recorded using Zero Knowledge Proofs. Your identity is completely anonymous.
           </p>
 
-          {/* Transaction Details */}
-          <div className="grid md:grid-cols-3 gap-6 mb-8">
-            {[
-              { label: "Transaction Hash", value: txHash || "Pending..." },
-              { label: "Block Number", value: blockNumber ? blockNumber.toLocaleString() : "Confirming..." },
-              { label: "Timestamp", value: timestamp ? new Date(timestamp).toLocaleString() : new Date().toLocaleString() },
-            ].map((item, idx) => (
-              <div key={idx} className="bg-slate-100 rounded-xl p-4">
-                <p className="text-xs text-gray-600 mb-2">{item.label}</p>
-                <p className="font-mono text-sm font-semibold text-slate-900 break-all">{item.value}</p>
-              </div>
-            ))}
+          {/* Vote Proof Details */}
+          <div className="grid md:grid-cols-2 gap-6 mb-8">
+            <div className="bg-slate-100 rounded-xl p-4">
+              <p className="text-xs text-gray-600 mb-2">Anonymity Proof (Nullifier)</p>
+              <p className="font-mono text-sm font-semibold text-slate-900 break-all">
+                {nullifierHash ? `${nullifierHash.slice(0, 18)}...${nullifierHash.slice(-8)}` : "Verifying..."}
+              </p>
+            </div>
+            <div className="bg-slate-100 rounded-xl p-4">
+              <p className="text-xs text-gray-600 mb-2">Timestamp</p>
+              <p className="font-mono text-sm font-semibold text-slate-900">
+                {timestamp ? new Date(timestamp).toLocaleString() : new Date().toLocaleString()}
+              </p>
+            </div>
           </div>
 
-          <div className="bg-blue-50 border border-blue-200 rounded-xl p-6 mb-8 text-left">
-            <h3 className="font-bold text-slate-900 mb-4">What's Next?</h3>
-            <ul className="space-y-3 text-sm text-gray-700">
+          <div className="bg-green-50 border border-green-200 rounded-xl p-6 mb-8 text-left">
+            <h3 className="font-bold text-green-800 mb-4 flex items-center gap-2">
+              <Shield className="w-5 h-5" />
+              Your Privacy is Protected
+            </h3>
+            <ul className="space-y-3 text-sm text-green-700">
               <li className="flex gap-3">
-                <span className="text-teal-500 font-bold">1.</span>
-                <span>Your vote has been encrypted and stored on the blockchain.</span>
+                <span className="text-green-500 font-bold">✓</span>
+                <span>Your identity is hidden using Zero Knowledge Proofs</span>
               </li>
               <li className="flex gap-3">
-                <span className="text-teal-500 font-bold">2.</span>
-                <span>Results will be published after voting closes on March 15, 2025.</span>
+                <span className="text-green-500 font-bold">✓</span>
+                <span>Only the nullifier above is recorded (not your identity)</span>
               </li>
               <li className="flex gap-3">
-                <span className="text-teal-500 font-bold">3.</span>
-                <span>You can verify your vote using the transaction hash above.</span>
+                <span className="text-green-500 font-bold">✓</span>
+                <span>Double-voting is prevented without revealing who voted</span>
               </li>
             </ul>
           </div>

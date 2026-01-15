@@ -2,10 +2,12 @@ import { createPublicClient, createWalletClient, http, Chain } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 import { sepolia, mainnet, polygon, arbitrum, arbitrumSepolia, polygonAmoy, baseSepolia, base } from 'viem/chains'
 import abi from '@/Solidity/abi.json'
+import zkpAbi from '@/Solidity/zkp-abi.json'
 
 // Get environment variables
 const RPC_URL = process.env.RPC_URL!
 const CONTRACT_ADDR = process.env.CONTRACT_ADDR as `0x${string}`
+const ZKP_CONTRACT_ADDR = process.env.ZKP_CONTRACT_ADDR as `0x${string}` | undefined
 const ADMIN_PRIVATE_KEY = process.env.ADMIN_PRIVATE_KEY as `0x${string}` | undefined
 
 // All supported chains by chain ID
@@ -163,11 +165,65 @@ export function getChainInfo() {
     }
 }
 
-// Contract configuration
+// Contract configuration (original BallotSystem)
 export const contractConfig = {
     address: CONTRACT_ADDR,
     abi: abi,
 } as const
+
+// ZKP Contract configuration (ZKBallotSystem)
+export const zkpContractConfig = ZKP_CONTRACT_ADDR ? {
+    address: ZKP_CONTRACT_ADDR,
+    abi: zkpAbi,
+} as const : null
+
+// Check if ZKP contract is configured
+export function isZkpEnabled(): boolean {
+    return !!ZKP_CONTRACT_ADDR
+}
+
+// Write to ZKP contract with retry
+export async function writeZkpContract(functionName: string, args: any[] = []) {
+    if (!ZKP_CONTRACT_ADDR) {
+        throw new Error('ZKP_CONTRACT_ADDR not configured in environment')
+    }
+
+    const walletClient = getWalletClient()
+    const account = privateKeyToAccount(ADMIN_PRIVATE_KEY!)
+    let retries = 3
+
+    while (retries > 0) {
+        try {
+            const nonce = await publicClient.getTransactionCount({
+                address: account.address,
+                blockTag: 'pending'
+            })
+
+            console.log(`📝 ZKP Contract: ${functionName} with nonce ${nonce}`)
+
+            const hash = await walletClient.writeContract({
+                address: ZKP_CONTRACT_ADDR,
+                abi: zkpAbi,
+                functionName,
+                args,
+                nonce,
+            })
+            return hash
+
+        } catch (error: any) {
+            console.error(`❌ ZKP Tx failed (retries left: ${retries}):`, error.shortMessage || error.message)
+
+            if (error.message.includes('replacement transaction underpriced') ||
+                error.message.includes('nonce too low')) {
+                await new Promise(r => setTimeout(r, 2000))
+                retries--
+                continue
+            }
+            throw error
+        }
+    }
+    throw new Error('Failed to submit ZKP transaction after retries')
+}
 
 // Election state enum mapping
 export const ElectionState = {

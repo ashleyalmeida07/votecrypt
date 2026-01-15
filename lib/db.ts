@@ -169,6 +169,54 @@ export async function initDatabase() {
             )
         `
 
+        // ============================================
+        // ZKP TABLES
+        // ============================================
+
+        // Voter commitments for ZKP voting
+        await sql`
+            CREATE TABLE IF NOT EXISTS voter_commitments (
+                id SERIAL PRIMARY KEY,
+                election_id INTEGER NOT NULL,
+                commitment VARCHAR(66) NOT NULL,
+                merkle_index INTEGER NOT NULL,
+                firebase_uid VARCHAR(255),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(election_id, commitment)
+            )
+        `
+
+        // Used nullifiers (double-spend protection)
+        await sql`
+            CREATE TABLE IF NOT EXISTS zkp_nullifiers (
+                id SERIAL PRIMARY KEY,
+                election_id INTEGER NOT NULL,
+                nullifier_hash VARCHAR(66) NOT NULL,
+                transaction_hash VARCHAR(66),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(election_id, nullifier_hash)
+            )
+        `
+
+        // Merkle tree state
+        await sql`
+            CREATE TABLE IF NOT EXISTS zkp_merkle_trees (
+                id SERIAL PRIMARY KEY,
+                election_id INTEGER UNIQUE NOT NULL,
+                merkle_root VARCHAR(66),
+                leaf_count INTEGER DEFAULT 0,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `
+
+        // Migration: Add zkp_enabled to elections
+        try {
+            await sql`ALTER TABLE elections ADD COLUMN IF NOT EXISTS zkp_enabled BOOLEAN DEFAULT FALSE`
+            await sql`ALTER TABLE elections ADD COLUMN IF NOT EXISTS zkp_contract_address VARCHAR(42)`
+        } catch (e) {
+            console.log('ZKP migration note:', e)
+        }
+
         console.log('✅ Database tables initialized')
         return true
     } catch (error) {

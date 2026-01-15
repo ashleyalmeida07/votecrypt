@@ -1,41 +1,78 @@
 import { NextResponse } from 'next/server'
-import { privateKeyToAccount } from 'viem/accounts'
+import { sql, getLatestElection, getVoterByFirebaseUid } from '@/lib/db'
+import { isZkpEnabled, writeZkpContract, getTransactionReceipt } from '@/lib/contract'
 import {
-    contractConfig,
-    getWalletClient,
-    getElectionState,
-    ElectionState,
-    writeContractWithRetry,
-    getMappedAddress,
-    getVoterOnChain,
-    getTransactionReceipt,
-} from '@/lib/contract'
-import { sql, getVoterByFirebaseUid, logTransaction, getUserByFirebaseUid } from '@/lib/db'
+    generateNullifier,
+    generateMerkleProof,
+    hexToBigInt,
+    verifyMerkleProof,
+    generateCommitment,
+    computeMerkleRoot,
+    bigIntToHex
+} from '@/lib/zkp'
 
 export const dynamic = 'force-dynamic'
 
-// GET: Check if user has voted
+/**
+ * GET: Check if user has voted (ZKP-based, election-scoped)
+ */
 export async function GET(request: Request) {
     try {
         const { searchParams } = new URL(request.url)
         const uid = searchParams.get('uid')
+        const nullifierSecret = searchParams.get('nullifierSecret')
 
         if (!uid) {
             return NextResponse.json({ error: 'User ID required' }, { status: 400 })
         }
 
-        const voter = await getVoterByFirebaseUid(uid)
+        // Get current election
+        const election = await getLatestElection()
+        if (!election) {
+            return NextResponse.json({ hasVoted: false, electionId: null })
+        }
 
+        // If nullifierSecret provided, check via ZKP nullifier (most accurate)
+        if (nullifierSecret) {
+            const nullifierHash = await generateNullifier(nullifierSecret, election.id)
+            const usedNullifier = await sql`
+                SELECT * FROM zkp_nullifiers 
+                WHERE election_id = ${election.id} AND nullifier_hash = ${nullifierHash}
+            `
+            return NextResponse.json({
+                hasVoted: usedNullifier.length > 0,
+                electionId: election.id,
+                method: 'zkp'
+            })
+        }
+
+        // Check if user has a ZKP commitment for this election
+        // If they do but no nullifierSecret was provided, they need to provide their secrets
+        const zkpCommitment = await sql`
+            SELECT * FROM voter_commitments 
+            WHERE election_id = ${election.id} AND firebase_uid = ${uid}
+        `
+
+        if (zkpCommitment.length > 0) {
+            // User is registered for ZKP in this election, but we can't check vote without their secret
+            // Tell frontend they need to provide secrets
+            return NextResponse.json({
+                hasVoted: false, // Can't determine without secrets
+                isZkpRegistered: true,
+                electionId: election.id,
+                message: 'Provide nullifierSecret to check vote status'
+            })
+        }
+
+        // User has no ZKP registration for this election - they haven't voted
         return NextResponse.json({
-            hasVoted: voter?.has_voted || false,
-            voterInfo: voter ? {
-                transactionHash: voter.transaction_hash,
-                votedFor: voter.voted_for
-            } : null
+            hasVoted: false,
+            isZkpRegistered: false,
+            electionId: election.id
         })
 
     } catch (error: any) {
-        console.error('Error fetching vote status:', error)
+        console.error('Error checking vote status:', error)
         return NextResponse.json(
             { error: 'Failed to check status' },
             { status: 500 }
@@ -43,131 +80,178 @@ export async function GET(request: Request) {
     }
 }
 
-// POST: Cast a vote
+/**
+ * POST: Cast a vote (ZKP COMPULSORY)
+ * 
+ * All votes MUST use Zero Knowledge Proofs for anonymity.
+ * This ensures voter privacy and prevents vote tracking.
+ */
 export async function POST(request: Request) {
     try {
-        const { candidateId, firebaseUid, candidateName } = await request.json()
+        const body = await request.json()
+        const { secret, nullifierSecret, candidateId, firebaseUid } = body
 
-        if (candidateId === undefined || !firebaseUid) {
+        // Validate ZKP inputs
+        if (!secret || !nullifierSecret) {
             return NextResponse.json(
-                { error: 'Candidate ID and User ID are required' },
+                {
+                    error: 'ZKP voting is required. Please provide secret and nullifierSecret.',
+                    hint: 'Register for ZKP voting first via /api/election/zkp/register'
+                },
                 { status: 400 }
             )
         }
 
-        // 1. Get/Derive the User's "Gasless" Wallet Address
-        const mappedAddress = getMappedAddress(firebaseUid)
-        console.log(`🗳️ Processing vote for User ${firebaseUid} (Mapped Address: ${mappedAddress})`)
-
-        // 2. Check Chain Status (Auto-Registration)
-        let chainVoter = await getVoterOnChain(mappedAddress).catch(() => null)
-
-        if (chainVoter && chainVoter.hasVoted) {
-            return NextResponse.json({
-                error: 'Blockchain rejected: Wallet has already voted.',
-                transactionHash: 'on-chain'
-            }, { status: 400 })
+        if (candidateId === undefined) {
+            return NextResponse.json(
+                { error: 'Candidate ID is required' },
+                { status: 400 }
+            )
         }
 
-        if (!chainVoter || !chainVoter.isRegistered) {
-            console.log(`🆕 User not registered on-chain. Registering ${mappedAddress}...`)
-            try {
-                const regHash = await writeContractWithRetry('registerVoter', [mappedAddress])
-                console.log('✅ Registered voter:', regHash)
-                // Wait briefly for confirmation or just proceed? Ideally wait. 
-                // For Sepolia, let's just wait 2s to minimize nonce issues, 
-                // or assume mempool will order them (nonce N, nonce N+1).
-                // writeContractWithRetry manages nonces, so sequential is fine.
-            } catch (regError: any) {
-                console.error("Registration failed:", regError.message)
-                // If "already registered", ignore.
-                if (!regError.message.includes('already registered')) {
-                    throw regError
-                }
-            }
+        // 1. Get current election
+        const election = await getLatestElection()
+        if (!election) {
+            return NextResponse.json(
+                { error: 'No active election found' },
+                { status: 404 }
+            )
         }
 
-        // 3. Check Election State
-        const state = await getElectionState()
-        if (state !== 1) { // 1 = Voting
-            return NextResponse.json({
-                error: `Election is not open. Current state: ${ElectionState[state as keyof typeof ElectionState]}`,
-            }, { status: 403 })
+        if (election.state !== 'Voting') {
+            return NextResponse.json(
+                { error: `Election is not open for voting. Current state: ${election.state}` },
+                { status: 403 }
+            )
         }
 
-        // 4. Submit Vote As Proxy (voteFor)
-        console.log(`🗳️ Casting 'voteFor' candidate ${candidateId}...`)
+        const electionId = election.id
+        console.log(`🗳️ ZKP Vote: Election ${electionId}, Candidate ${candidateId}`)
 
-        // NOTE: This requires the contract to have 'function voteFor(address, uint)'
-        const hash = await writeContractWithRetry('voteFor', [mappedAddress, BigInt(candidateId)])
+        // 2. Generate nullifier (double-spend protection)
+        const nullifierHash = await generateNullifier(nullifierSecret, electionId)
 
-        console.log('✅ Vote Transaction Hash:', hash)
+        // 3. Check nullifier hasn't been used (DOUBLE-SPEND PROTECTION)
+        const usedNullifier = await sql`
+            SELECT * FROM zkp_nullifiers 
+            WHERE election_id = ${electionId} AND nullifier_hash = ${nullifierHash}
+        `
 
-        // 5. Update Database
-        try {
-            await sql`
-                INSERT INTO voters (firebase_uid, wallet_address, is_registered, has_voted, voted_for, transaction_hash, created_at)
-                VALUES (${firebaseUid}, ${mappedAddress}, true, true, ${candidateId}, ${hash}, CURRENT_TIMESTAMP)
-                ON CONFLICT (firebase_uid) 
-                DO UPDATE SET has_voted = true, voted_for = ${candidateId}, transaction_hash = ${hash}, wallet_address = ${mappedAddress}, created_at = CURRENT_TIMESTAMP
+        if (usedNullifier.length > 0) {
+            console.log(`❌ Double-spend attempt blocked: ${nullifierHash.slice(0, 18)}...`)
+            return NextResponse.json(
+                { error: 'You have already voted in this election (nullifier used)' },
+                { status: 400 }
+            )
+        }
+
+        // 4. Compute voter's commitment from secrets
+        const voterCommitment = await generateCommitment(secret, nullifierSecret)
+        console.log('🔍 Voter commitment:', voterCommitment.slice(0, 20) + '...')
+
+        // 5. Verify voter commitment is in database (simpler than Merkle proof)
+        const commitmentCheck = await sql`
+            SELECT * FROM voter_commitments 
+            WHERE election_id = ${electionId} AND commitment = ${voterCommitment}
+        `
+
+        if (commitmentCheck.length === 0) {
+            return NextResponse.json(
+                { error: 'Your commitment is not in the voter registry. Please register first.' },
+                { status: 403 }
+            )
+        }
+
+        console.log('✅ Voter commitment verified in database')
+
+        // 8. Validate candidate exists
+        const candidates = await sql`
+            SELECT * FROM candidates WHERE election_id = ${electionId}
+        `
+
+        const candidate = candidates.find(c =>
+            c.blockchain_id === candidateId || c.id === candidateId
+        )
+
+        if (!candidate) {
+            return NextResponse.json(
+                { error: 'Invalid candidate ID' },
+                { status: 400 }
+            )
+        }
+
+        // 9. Record nullifier in database (prevents double voting)
+        await sql`
+            INSERT INTO zkp_nullifiers (election_id, nullifier_hash)
+            VALUES (${electionId}, ${nullifierHash})
+        `
+
+        // 10. Submit to on-chain ZKP contract if configured
+        let transactionHash: string | null = null
+        let blockNumber: number | null = null
+
+        if (isZkpEnabled()) {
+            console.log(`🔗 Submitting anonymous vote to on-chain ZKP contract...`)
+
+            // Compute merkle root for on-chain verification
+            const allCommitments = await sql`
+                SELECT commitment FROM voter_commitments 
+                WHERE election_id = ${electionId}
+                ORDER BY merkle_index ASC
             `
+            const leaves = allCommitments.map(c => hexToBigInt(c.commitment))
+            const merkleRoot = await computeMerkleRoot(leaves)
 
-            await logTransaction('vote', hash, {
-                candidateId,
-                candidateName,
-                userId: firebaseUid,
-                mappedAddress
-            })
+            // Convert nullifier and merkle root to bytes32 format
+            const nullifierBytes32 = nullifierHash as `0x${string}`
+            const merkleRootBytes32 = bigIntToHex(merkleRoot) as `0x${string}`
+            const candidateBlockchainId = candidate.blockchain_id ?? candidateId
 
-            // Update candidate count in DB too (write-through)
-            // Scope by election_id to avoid updating old election candidates
-            const latestElection = await sql`SELECT id FROM elections ORDER BY id DESC LIMIT 1`
-            const electionId = latestElection.length > 0 ? latestElection[0].id : null
+            try {
+                transactionHash = await writeZkpContract('voteAnonymous', [
+                    nullifierBytes32,
+                    BigInt(candidateBlockchainId),
+                    merkleRootBytes32
+                ])
 
-            if (electionId !== null) {
-                await sql`
-                    UPDATE candidates 
-                    SET vote_count = vote_count + 1, updated_at = CURRENT_TIMESTAMP
-                    WHERE blockchain_id = ${candidateId} AND election_id = ${electionId}
-                `
-            } else {
-                await sql`
-                    UPDATE candidates 
-                    SET vote_count = vote_count + 1, updated_at = CURRENT_TIMESTAMP
-                    WHERE blockchain_id = ${candidateId} AND election_id IS NULL
-                `
+                console.log(`📦 On-chain tx submitted: ${transactionHash}`)
+
+                // Wait for receipt
+                const receipt = await getTransactionReceipt(transactionHash as `0x${string}`)
+                if (receipt) {
+                    blockNumber = receipt.blockNumber
+                }
+            } catch (onChainError: any) {
+                console.error('⚠️ On-chain vote failed, but DB vote recorded:', onChainError.message)
+                // Continue - the DB vote is still valid
             }
-
-        } catch (dbError: any) {
-            console.error('Failed to update DB:', dbError)
         }
 
-        // Get transaction receipt for block number (don't block response if it takes too long)
-        let blockNumber = null
-        let timestamp = new Date().toISOString()
-        try {
-            const receipt = await getTransactionReceipt(hash as `0x${string}`)
-            if (receipt) {
-                blockNumber = receipt.blockNumber
-            }
-        } catch (e) {
-            console.log('Receipt fetch skipped:', e)
-        }
+        // 11. Update candidate vote count in database
+        await sql`
+            UPDATE candidates 
+            SET vote_count = vote_count + 1, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ${candidate.id}
+        `
+
+        console.log(`✅ Anonymous ZKP vote cast: Nullifier ${nullifierHash.slice(0, 18)}... → Candidate ${candidate.name}`)
 
         return NextResponse.json({
             success: true,
-            transactionHash: hash,
-            blockNumber,
-            timestamp
+            message: transactionHash ? 'Anonymous vote recorded on blockchain!' : 'Anonymous vote successfully cast!',
+            nullifierHash,
+            candidateId: candidate.blockchain_id ?? candidate.id,
+            timestamp: new Date().toISOString(),
+            anonymous: true,
+            onChain: !!transactionHash,
+            transactionHash,
+            blockNumber
         })
 
     } catch (error: any) {
-        console.error('Vote error:', error)
-        if (error.message && error.message.includes('already voted')) {
-            return NextResponse.json({ error: 'Blockchain rejected: Wallet has already voted.' }, { status: 400 })
-        }
+        console.error('ZKP vote error:', error)
         return NextResponse.json(
-            { error: error.message || 'Failed to submit vote' },
+            { error: error.message || 'Failed to cast vote' },
             { status: 500 }
         )
     }

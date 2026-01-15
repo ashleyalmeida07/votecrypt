@@ -43,6 +43,7 @@ export async function GET() {
         }))
 
         return NextResponse.json({
+            electionId,  // Added for ZKP registration
             electionName,
             electionOfficial: process.env.ADMIN_ADDRESS || '0x...', // Optimistic or Env
             state,
