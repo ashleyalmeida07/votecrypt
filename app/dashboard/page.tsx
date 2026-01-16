@@ -246,14 +246,13 @@ export default function VoterDashboard() {
 
     setSubmitting(true)
     try {
-      const res = await fetch('/api/election/vote', {
+      const res = await fetch('/api/election/zkp/vote', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           secret: zkpSecrets.secret,
           nullifierSecret: zkpSecrets.nullifierSecret,
-          candidateId: blockchainId,
-          firebaseUid: user.uid
+          candidateId: blockchainId
         })
       })
 

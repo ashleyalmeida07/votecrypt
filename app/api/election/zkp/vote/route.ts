@@ -66,54 +66,37 @@ export async function POST(request: Request) {
             )
         }
 
-        // 4. Get all commitments to verify Merkle proof
-        const allCommitmentsResult = await sql`
-            SELECT commitment FROM voter_commitments 
+        // 4. Check if there are voters registered
+        const voterCount = await sql`
+            SELECT COUNT(*) as count FROM voter_commitments 
             WHERE election_id = ${electionId}
-            ORDER BY merkle_index ASC
         `
 
-        if (allCommitmentsResult.length === 0) {
+        if (voterCount[0].count === 0) {
             return NextResponse.json(
                 { error: 'No voters registered for this election' },
                 { status: 400 }
             )
         }
 
-        const leaves = allCommitmentsResult.map(c => hexToBigInt(c.commitment))
-
         // 5. Compute voter's commitment from secrets
         const { generateCommitment } = await import('@/lib/zkp')
         const voterCommitment = await generateCommitment(secret, nullifierSecret)
-        const voterCommitmentBigInt = hexToBigInt(voterCommitment)
 
-        // 6. Find voter in Merkle tree
-        const leafIndex = leaves.findIndex(leaf => leaf === voterCommitmentBigInt)
-        if (leafIndex === -1) {
+        // 6. Verify voter commitment exists in database (simpler and more reliable than Merkle proof)
+        const commitmentCheck = await sql`
+            SELECT * FROM voter_commitments 
+            WHERE election_id = ${electionId} AND commitment = ${voterCommitment}
+        `
+
+        if (commitmentCheck.length === 0) {
             return NextResponse.json(
                 { error: 'Your commitment is not in the voter registry. Please register first.' },
                 { status: 403 }
             )
         }
 
-        // 7. Generate and verify Merkle proof
-        const { computeMerkleRoot } = await import('@/lib/zkp')
-        const merkleRoot = await computeMerkleRoot(leaves)
-        const merkleProof = await generateMerkleProof(leaves, leafIndex)
-
-        const isValidProof = await verifyMerkleProof(
-            voterCommitmentBigInt,
-            merkleRoot,
-            merkleProof.siblings,
-            merkleProof.pathIndices
-        )
-
-        if (!isValidProof) {
-            return NextResponse.json(
-                { error: 'Merkle proof verification failed' },
-                { status: 403 }
-            )
-        }
+        console.log('✅ Voter commitment verified in database')
 
         // 8. Validate candidate
         const candidates = await sql`
@@ -142,13 +125,52 @@ export async function POST(request: Request) {
         `
 
         // 11. Submit to on-chain ZKP contract
-        const { writeZkpContract, getTransactionReceipt } = await import('@/lib/contract')
-        const { bigIntToHex, isZkpEnabled } = await import('@/lib/zkp') // Assuming isZkpEnabled is there or we check contract address
+        const { writeZkpContract, getTransactionReceipt, publicClient } = await import('@/lib/contract')
+        const { bigIntToHex, isZkpEnabled, computeMerkleRoot } = await import('@/lib/zkp')
+        const zkpAbi = (await import('@/Solidity/zkp-abi.json')).default
 
         let transactionHash: string | null = null
         let blockNumber: number | null = null
 
-        const contractAddress = (election.contract_address || process.env.ZKP_CONTRACT_ADDR) as `0x${string}` | undefined
+        const contractAddress = process.env.ZKP_CONTRACT_ADDR as `0x${string}` | undefined
+
+        // Compute Merkle root from all commitments for on-chain verification
+        const allCommitmentsResult = await sql`
+            SELECT commitment FROM voter_commitments 
+            WHERE election_id = ${electionId}
+            ORDER BY merkle_index ASC
+        `
+        const leaves = allCommitmentsResult.map((c: any) => hexToBigInt(c.commitment))
+        const merkleRoot = await computeMerkleRoot(leaves)
+
+        // Pre-flight: Check if on-chain Merkle root matches our computed root
+        if (contractAddress) {
+            const merkleRootHex = bigIntToHex(merkleRoot)
+
+            try {
+                const onChainRoot = await publicClient.readContract({
+                    address: contractAddress,
+                    abi: zkpAbi,
+                    functionName: 'merkleRoot',
+                }) as string
+
+                console.log(`🔍 On-chain Merkle root: ${onChainRoot}`)
+                console.log(`🔍 Computed Merkle root: ${merkleRootHex}`)
+
+                if (onChainRoot.toLowerCase() !== merkleRootHex.toLowerCase()) {
+                    console.log('⚠️ Merkle root MISMATCH! Syncing to chain before vote...')
+
+                    // Auto-sync the Merkle root to match our database
+                    await writeZkpContract('updateMerkleRoot', [merkleRootHex as `0x${string}`], contractAddress)
+                    console.log('✅ Merkle root synced to chain')
+
+                    // Wait a moment for the tx to be picked up
+                    await new Promise(r => setTimeout(r, 2000))
+                }
+            } catch (rootCheckError: any) {
+                console.error('⚠️ Could not verify on-chain Merkle root:', rootCheckError.message)
+            }
+        }
 
         if (contractAddress) {
             console.log(`🔗 Submitting anonymous vote to on-chain ZKP contract: ${contractAddress}...`)

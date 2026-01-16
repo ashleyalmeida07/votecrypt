@@ -47,8 +47,10 @@ export async function GET() {
 
         // 3. Detect Mismatch: DB=Voting/Ended but ZKP=Created (0)
         let repaired = false
+        let needsManualStart = false
+
         if (election.state !== 'Created' && zkpState === 0) {
-            console.warn('⚠️ DETECTED MISMATCH: DB is ahead of ZKP. Attempting Repair...')
+            console.warn('⚠️ DETECTED MISMATCH: DB is ahead of ZKP. Syncing data only (no auto-start)...')
 
             // A. Sync Merkle Root
             const trees = await sql`SELECT merkle_root FROM zkp_merkle_trees WHERE election_id = ${election.id} ORDER BY id DESC LIMIT 1`
@@ -81,16 +83,10 @@ export async function GET() {
                 }
             }
 
-            // C. Start Election
-            console.log('🚀 Starting Election on ZKP Contract...')
-            await writeZkpContract('startElection', [], zkpContractAddress)
-
-            if (election.state === 'Ended') {
-                console.log('🏁 Ending Election on ZKP Contract (Catching up)...')
-                await writeZkpContract('endElection', [], zkpContractAddress)
-            }
-
+            // C. DO NOT auto-start - just flag that manual action is needed
+            needsManualStart = true
             repaired = true
+            console.log('✅ Data synced. Manual start required via /api/election/state with action=start')
         }
 
         return NextResponse.json({
@@ -98,7 +94,10 @@ export async function GET() {
             dbState: election.state,
             zkpState,
             repaired,
-            message: repaired ? 'State mismatch repaired!' : 'State is consistent (or not repairable via this logic)'
+            needsManualStart,
+            message: needsManualStart
+                ? 'Data synced! ZKP contract is in Created state. Use POST /api/election/state with action=start to start voting.'
+                : (repaired ? 'State mismatch repaired!' : 'State is consistent (or not repairable via this logic)')
         })
 
     } catch (error: any) {

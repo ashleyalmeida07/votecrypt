@@ -1,0 +1,54 @@
+services:
+  # 1. Python Backend Service
+  - type: web
+    name: votecrypt-backend
+    runtime: python
+    region: oregon
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.12
+
+  # 2. Next.js Frontend Service
+  - type: web
+    name: votecrypt-frontend
+    runtime: node
+    region: oregon
+    plan: free
+    rootDir: .
+    # Install pnpm, then dependencies, then build
+    buildCommand: npm install -g pnpm && pnpm install && pnpm run build
+    startCommand: pnpm start
+    envVars:
+      - key: NODE_VERSION
+        value: 20.10.0
+      - key: FACE_VERIFICATION_API_URL
+        fromService:
+          type: web
+          name: votecrypt-backend
+          property: url
+      - key: NEXT_PUBLIC_FIREBASE_API_KEY
+        sync: false # User must provide this in dashboard
+      - key: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+        sync: false
+      - key: NEXT_PUBLIC_FIREBASE_PROJECT_ID
+        sync: false
+      - key: NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
+        sync: false
+      - key: NEXT_PUBLIC_FIREBASE_APP_ID
+        sync: false
+      - key: CONTRACT_ADDR
+        sync: false
+      - key: ZKP_CONTRACT_ADDR
+        sync: false
+      - key: RPC_URL
+        sync: false
+      - key: ADMIN_PRIVATE_KEY
+        sync: false
+      - key: POSTGRES_URL
+        sync: false
+      - key: POSTGRES_URL_NON_POOLING
+        sync: false

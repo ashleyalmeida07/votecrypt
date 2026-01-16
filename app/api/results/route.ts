@@ -71,7 +71,7 @@ export async function GET() {
         }
 
         // Include contract address (from env or DB)
-        const contractAddress = process.env.CONTRACT_ADDR || election[0]?.contract_address || null
+        const contractAddress = process.env.ZKP_CONTRACT_ADDR || '0x50F56175CAE2Dff674A2dAFfE83c01EAfFB085C3' || election[0]?.contract_address || null
 
         return NextResponse.json({
             success: true,

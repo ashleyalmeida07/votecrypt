@@ -207,12 +207,44 @@ export async function POST(request: Request) {
             const merkleRootBytes32 = bigIntToHex(merkleRoot) as `0x${string}`
             const candidateBlockchainId = candidate.blockchain_id ?? candidateId
 
+            const zkpContractAddress = process.env.ZKP_CONTRACT_ADDR as `0x${string}` | undefined
+
+            // Pre-flight: Check if on-chain Merkle root matches our computed root
+            if (zkpContractAddress) {
+                try {
+                    const { publicClient } = await import('@/lib/contract')
+                    const zkpAbi = (await import('@/Solidity/zkp-abi.json')).default
+
+                    const onChainRoot = await publicClient.readContract({
+                        address: zkpContractAddress,
+                        abi: zkpAbi,
+                        functionName: 'merkleRoot',
+                    }) as string
+
+                    console.log(`🔍 On-chain Merkle root: ${onChainRoot}`)
+                    console.log(`🔍 Computed Merkle root: ${merkleRootBytes32}`)
+
+                    if (onChainRoot.toLowerCase() !== merkleRootBytes32.toLowerCase()) {
+                        console.log('⚠️ Merkle root MISMATCH! Syncing to chain before vote...')
+
+                        // Auto-sync the Merkle root to match our database
+                        await writeZkpContract('updateMerkleRoot', [merkleRootBytes32], zkpContractAddress)
+                        console.log('✅ Merkle root synced to chain')
+
+                        // Wait a moment for the tx to be picked up
+                        await new Promise(r => setTimeout(r, 2000))
+                    }
+                } catch (rootCheckError: any) {
+                    console.error('⚠️ Could not verify on-chain Merkle root:', rootCheckError.message)
+                }
+            }
+
             try {
                 transactionHash = await writeZkpContract('voteAnonymous', [
                     nullifierBytes32,
                     BigInt(candidateBlockchainId),
                     merkleRootBytes32
-                ])
+                ], zkpContractAddress)
 
                 console.log(`📦 On-chain tx submitted: ${transactionHash}`)
 

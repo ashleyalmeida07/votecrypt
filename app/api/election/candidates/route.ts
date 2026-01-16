@@ -79,13 +79,27 @@ export async function POST(request: Request) {
             // We continue to ZKP sync instead of returning error immediately
         }
 
-        // 2b. Sync to ZKP Contract if enabled
+        // 2b. Sync to ZKP Contract if enabled AND in Created state
         let zkpHash = null
         if (isZkpEnabled()) {
             try {
-                console.log('🔗 Syncing candidate to ZKP contract...')
-                zkpHash = await writeZkpContract('addCandidate', [anonymizedName, anonymizedParty])
-                console.log('✅ ZKP candidate sync complete:', zkpHash)
+                // Check ZKP contract state first
+                const zkpContractAddress = process.env.ZKP_CONTRACT_ADDR as `0x${string}`
+                const zkpAbi = (await import('@/Solidity/zkp-abi.json')).default
+
+                const zkpState = await publicClient.readContract({
+                    address: zkpContractAddress,
+                    abi: zkpAbi,
+                    functionName: 'electionState',
+                }) as bigint
+
+                if (Number(zkpState) === 0) { // Created state
+                    console.log('🔗 Syncing candidate to ZKP contract...')
+                    zkpHash = await writeZkpContract('addCandidate', [anonymizedName, anonymizedParty])
+                    console.log('✅ ZKP candidate sync complete:', zkpHash)
+                } else {
+                    console.log(`⚠️ ZKP contract in state ${zkpState} (not Created), skipping candidate sync`)
+                }
             } catch (zkpError: any) {
                 console.error('⚠️ ZKP candidate sync failed:', zkpError.message)
                 // If BOTH failed, then we have a problem
