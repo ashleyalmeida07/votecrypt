@@ -1,10 +1,17 @@
 "use client"
 import { useState, useEffect, useCallback } from "react"
 import type React from "react"
-
-import { Shield, BarChart3, CheckCircle, Clock, AlertCircle, Loader2, Plus, UserPlus } from "lucide-react"
+import { useRouter } from "next/navigation"
+import Link from "next/link"
+import { Shield, BarChart3, CheckCircle, Clock, AlertCircle, Loader2, Plus, UserPlus, LogOut, ExternalLink } from "lucide-react"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts"
 import { toast } from "sonner"
+import { useAuth } from "@/contexts/AuthContext"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Badge } from "@/components/ui/badge"
+import { Input } from "@/components/ui/input"
 
 interface Candidate {
   id: number
@@ -22,6 +29,9 @@ interface ElectionStats {
   totalVotes: number
   candidates: Candidate[]
   contractAddress: string
+  blockExplorer?: string
+  chain?: string
+  chainId?: number
 }
 
 export default function AdminPanel() {
@@ -30,7 +40,9 @@ export default function AdminPanel() {
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [showFinalResults, setShowFinalResults] = useState(false)
   const [adminAuthenticated, setAdminAuthenticated] = useState(false)
-  const [adminPassword, setAdminPassword] = useState("")
+  const [checkingAuth, setCheckingAuth] = useState(true)
+  const { user, signInWithGoogle, signOut } = useAuth()
+  const router = useRouter()
 
   // Form states
   const [newCandidateName, setNewCandidateName] = useState("")
@@ -61,13 +73,49 @@ export default function AdminPanel() {
     }
   }, [adminAuthenticated, fetchStats])
 
-  const handleLogin = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (adminPassword === "admin123") {
-      setAdminAuthenticated(true)
-    } else {
-      toast.error("Invalid password")
+  useEffect(() => {
+    const verifyAdminAccess = async () => {
+      if (!user?.email) {
+        setAdminAuthenticated(false)
+        setCheckingAuth(false)
+        return
+      }
+
+      try {
+        const response = await fetch('/api/admin/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: user.email })
+        })
+
+        const data = await response.json()
+
+        if (data.isAuthorized) {
+          setAdminAuthenticated(true)
+          toast.success(`Welcome, ${user.displayName || 'Admin'}!`)
+        } else {
+          setAdminAuthenticated(false)
+          await signOut()
+          toast.error(data.message || 'Access denied. You are not authorized to access the admin panel.')
+          setTimeout(() => router.push('/'), 2000)
+        }
+      } catch (error) {
+        console.error('Admin verification error:', error)
+        setAdminAuthenticated(false)
+        toast.error('Failed to verify admin access')
+      } finally {
+        setCheckingAuth(false)
+      }
     }
+
+    verifyAdminAccess()
+  }, [user, signOut, router])
+
+  const handleAdminLogout = async () => {
+    await signOut()
+    setAdminAuthenticated(false)
+    toast.success('Logged out successfully')
+    router.push('/')
   }
 
   const handleElectionAction = async (action: "start" | "end" | "newElection") => {
@@ -214,16 +262,27 @@ export default function AdminPanel() {
     { time: "Current", votes: stats?.totalVotes || 0 },
   ]
 
+  if (checkingAuth) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="w-8 h-8 animate-spin text-primary mx-auto mb-4" />
+          <p className="text-muted-foreground">Verifying admin access...</p>
+        </div>
+      </div>
+    )
+  }
+
   if (!adminAuthenticated) {
-    return <AdminLoginPage onLogin={handleLogin} password={adminPassword} setPassword={setAdminPassword} />
+    return <AdminLoginPage />
   }
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+      <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
-          <Loader2 className="w-8 h-8 animate-spin text-teal-600 mx-auto mb-4" />
-          <p className="text-gray-600">Loading election data from blockchain...</p>
+          <Loader2 className="w-8 h-8 animate-spin text-primary mx-auto mb-4" />
+          <p className="text-muted-foreground">Loading election data from blockchain...</p>
         </div>
       </div>
     )
@@ -232,127 +291,144 @@ export default function AdminPanel() {
   const uiState = stats ? stateToUIState(stats.state) : 'not_started'
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-background">
       {/* Header */}
-      <header className="bg-white border-b border-gray-200">
-        <div className="ballot-container py-4 flex items-center justify-between">
+      <header className="bg-card border-b">
+        <div className="max-w-350 mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-xl bg-slate-900 flex items-center justify-center">
-              <Shield className="w-5 h-5 text-white" />
-            </div>
+            <img src="/favicon.svg" alt="VoteCrypt Logo" className="w-8 h-8" />
             <div>
-              <h1 className="text-2xl font-bold text-slate-900">BALLOT Admin Panel</h1>
+              <h1 className="text-2xl font-bold">VoteCrypt Admin Panel</h1>
               {stats?.electionName && (
-                <p className="text-sm text-gray-600">{stats.electionName}</p>
+                <p className="text-sm text-muted-foreground">{stats.electionName}</p>
               )}
             </div>
           </div>
-          <button
-            onClick={() => setAdminAuthenticated(false)}
-            className="text-gray-600 hover:text-slate-900 font-medium transition-colors"
+          <Button
+            onClick={handleAdminLogout}
+            variant="ghost"
+            size="sm"
           >
+            <LogOut className="w-4 h-4 mr-2" />
             Logout
-          </button>
+          </Button>
         </div>
       </header>
 
-      <div className="ballot-container py-8">
+      <div className="max-w-350 mx-auto px-4 py-8">
         {/* Alert Banner */}
-        <div className="ballot-card ballot-card-hover p-4 bg-blue-50 border-l-4 border-teal-500 mb-8 flex items-start gap-3">
-          <AlertCircle className="w-5 h-5 text-teal-600 shrink-0 mt-0.5" />
-          <div>
-            <h3 className="font-bold text-slate-900">Live Blockchain Connection</h3>
-            <p className="text-sm text-gray-600">
+        <Alert className="mb-8 border-l-4 border-primary">
+          <AlertCircle className="h-5 w-5" />
+          <AlertDescription>
+            <h3 className="font-bold">Live Blockchain Connection</h3>
+            <p className="text-sm">
               Connected to smart contract. All actions are recorded on the blockchain.
             </p>
-          </div>
-        </div>
+          </AlertDescription>
+        </Alert>
 
         <div className="grid lg:grid-cols-4 gap-6 mb-8">
           {/* Election Status */}
-          <div className="ballot-card ballot-card-hover p-6">
-            <p className="text-gray-600 text-sm font-medium mb-2">Election Status</p>
-            <div className="flex items-center gap-2 mb-4">
-              <div
-                className={`w-3 h-3 rounded-full ${uiState === "active" ? "bg-green-500 animate-pulse" :
-                  uiState === "closed" ? "bg-red-500" : "bg-gray-400"
+          <Card>
+            <CardContent className="pt-6">
+              <p className="text-muted-foreground text-sm font-medium mb-2">Election Status</p>
+              <div className="flex items-center gap-2 mb-4">
+                <div
+                  className={`w-3 h-3 rounded-full ${
+                    uiState === "active" ? "bg-green-500 animate-pulse" :
+                    uiState === "closed" ? "bg-red-500" : "bg-gray-400"
                   }`}
-              ></div>
-              <p className="text-lg font-bold text-slate-900">{stats?.stateName || "Unknown"}</p>
-            </div>
-          </div>
+                ></div>
+                <p className="text-lg font-bold">{stats?.stateName || "Unknown"}</p>
+              </div>
+            </CardContent>
+          </Card>
 
           {/* Total Votes */}
-          <div className="ballot-card ballot-card-hover p-6">
-            <p className="text-gray-600 text-sm font-medium mb-2">Total Votes Cast</p>
-            <p className="text-3xl font-bold text-slate-900">{stats?.totalVotes?.toLocaleString() || 0}</p>
-            <p className="text-xs text-gray-500 mt-2">On-chain verified</p>
-          </div>
+          <Card>
+            <CardContent className="pt-6">
+              <p className="text-muted-foreground text-sm font-medium mb-2">Total Votes Cast</p>
+              <p className="text-3xl font-bold">{stats?.totalVotes?.toLocaleString() || 0}</p>
+              <p className="text-xs text-muted-foreground mt-2">On-chain verified</p>
+            </CardContent>
+          </Card>
 
           {/* Candidates */}
-          <div className="ballot-card ballot-card-hover p-6">
-            <p className="text-gray-600 text-sm font-medium mb-2">Candidates</p>
-            <p className="text-3xl font-bold text-teal-600">{stats?.candidateCount || 0}</p>
-            <p className="text-xs text-gray-500 mt-2">Registered on contract</p>
-          </div>
+          <Card>
+            <CardContent className="pt-6">
+              <p className="text-muted-foreground text-sm font-medium mb-2">Candidates</p>
+              <p className="text-3xl font-bold text-primary">{stats?.candidateCount || 0}</p>
+              <p className="text-xs text-muted-foreground mt-2">Registered on contract</p>
+            </CardContent>
+          </Card>
 
           {/* Results Published */}
-          <div className="ballot-card ballot-card-hover p-6">
-            <p className="text-gray-600 text-sm font-medium mb-2">Results Published</p>
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={showFinalResults}
-                onChange={(e) => setShowFinalResults(e.target.checked)}
-                className="w-4 h-4"
-              />
-              <span className="font-bold text-slate-900">{showFinalResults ? "Yes" : "No"}</span>
-            </div>
-            <p className="text-xs text-gray-500 mt-2">Make results public</p>
-          </div>
+          <Card>
+            <CardContent className="pt-6">
+              <p className="text-muted-foreground text-sm font-medium mb-2">Results Published</p>
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={showFinalResults}
+                  onChange={(e) => setShowFinalResults(e.target.checked)}
+                  className="w-4 h-4"
+                />
+                <span className="font-bold">{showFinalResults ? "Yes" : "No"}</span>
+              </div>
+              <p className="text-xs text-muted-foreground mt-2">Make results public</p>
+            </CardContent>
+          </Card>
         </div>
 
         <div className="grid lg:grid-cols-3 gap-8">
           {/* Main Content */}
           <div className="lg:col-span-2 space-y-8">
             {/* Vote Timeline */}
-            <div className="ballot-card ballot-card-hover p-8">
-              <h2 className="text-xl font-bold text-slate-900 mb-6">Vote Count</h2>
-              <div className="text-center py-8">
-                <p className="text-6xl font-bold text-slate-900">{stats?.totalVotes?.toLocaleString() || 0}</p>
-                <p className="text-gray-600 mt-2">Total votes recorded on blockchain</p>
-              </div>
-            </div>
+            <Card>
+              <CardHeader>
+                <CardTitle>Vote Count</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-center py-8">
+                  <p className="text-6xl font-bold">{stats?.totalVotes?.toLocaleString() || 0}</p>
+                  <p className="text-muted-foreground mt-2">Total votes recorded on blockchain</p>
+                </div>
+              </CardContent>
+            </Card>
 
             {/* Candidate Vote Breakdown */}
-            <div className="ballot-card ballot-card-hover p-8">
-              <h2 className="text-xl font-bold text-slate-900 mb-6">Current Vote Distribution</h2>
-              {stats?.candidates && stats.candidates.length > 0 ? (
-                <div className="space-y-6">
-                  {stats.candidates.map((candidate) => (
-                    <div key={candidate.id}>
-                      <div className="flex items-center justify-between mb-2">
-                        <div>
-                          <h3 className="font-bold text-slate-900">{candidate.name}</h3>
-                          <p className="text-xs text-gray-600">{candidate.party}</p>
+            <Card>
+              <CardHeader>
+                <CardTitle>Current Vote Distribution</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {stats?.candidates && stats.candidates.length > 0 ? (
+                  <div className="space-y-6">
+                    {stats.candidates.map((candidate) => (
+                      <div key={candidate.id}>
+                        <div className="flex items-center justify-between mb-2">
+                          <div>
+                            <h3 className="font-bold">{candidate.name}</h3>
+                            <p className="text-xs text-muted-foreground">{candidate.party}</p>
+                          </div>
+                          <p className="font-bold">{candidate.voteCount} votes</p>
                         </div>
-                        <p className="font-bold text-slate-900">{candidate.voteCount} votes</p>
+                        <div className="w-full bg-secondary rounded-full h-2">
+                          <div
+                            className="h-full rounded-full transition-all bg-primary"
+                            style={{
+                              width: `${stats.totalVotes > 0 ? (candidate.voteCount / stats.totalVotes) * 100 : 0}%`,
+                            }}
+                          ></div>
+                        </div>
                       </div>
-                      <div className="w-full bg-gray-200 rounded-full h-2">
-                        <div
-                          className="h-full rounded-full transition-all bg-teal-500"
-                          style={{
-                            width: `${stats.totalVotes > 0 ? (candidate.voteCount / stats.totalVotes) * 100 : 0}%`,
-                          }}
-                        ></div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-gray-500 text-center py-8">No candidates registered yet</p>
-              )}
-            </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-muted-foreground text-center py-8">No candidates registered yet</p>
+                )}
+              </CardContent>
+            </Card>
 
             {/* Add Candidate Form */}
             {stats?.state === 0 && (
@@ -551,6 +627,19 @@ export default function AdminPanel() {
                     <CheckCircle className="w-4 h-4" /> Connected
                   </p>
                 </div>
+                {stats?.contractAddress && stats?.blockExplorer && (
+                  <div className="pt-2">
+                    <a
+                      href={`${stats.blockExplorer}/address/${stats.contractAddress}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-2 px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white text-sm font-medium rounded-lg transition-colors"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                      View on Block Explorer
+                    </a>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -580,60 +669,93 @@ export default function AdminPanel() {
   )
 }
 
-function AdminLoginPage({
-  onLogin,
-  password,
-  setPassword,
-}: {
-  onLogin: (e: React.FormEvent) => void
-  password: string
-  setPassword: (pwd: string) => void
-}) {
+function AdminLoginPage() {
+  const [loading, setLoading] = useState(false)
+  const { signInWithGoogle } = useAuth()
+
+  const handleGoogleSignIn = async () => {
+    setLoading(true)
+    try {
+      await signInWithGoogle()
+      // Verification happens in parent component's useEffect
+    } catch (error: any) {
+      console.error("Admin sign in error:", error)
+      toast.error(error.message || "Failed to sign in")
+      setLoading(false)
+    }
+  }
+
   return (
-    <div className="min-h-screen bg-linear-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
-        {/* Logo */}
-        <div className="text-center mb-8">
-          <div className="w-12 h-12 rounded-xl bg-teal-500 flex items-center justify-center mx-auto mb-4">
-            <Shield className="w-8 h-8 text-white" />
+    <div className="min-h-screen bg-background flex items-center justify-center p-4">
+      <Card className="w-full max-w-md">
+        <CardHeader className="text-center space-y-4">
+          <div className="flex justify-center">
+            <img src="/favicon.svg" alt="VoteCrypt Logo" className="w-16 h-16" />
           </div>
-          <h1 className="text-3xl font-bold text-white">BALLOT</h1>
-          <p className="text-gray-300 mt-2">Admin Panel</p>
-        </div>
-
-        {/* Login Card */}
-        <div className="ballot-card p-8">
-          <h2 className="text-2xl font-bold text-slate-900 mb-6 text-center">Election Authority Access</h2>
-
-          <form onSubmit={onLogin}>
-            <div className="mb-6">
-              <label className="block text-sm font-medium text-slate-900 mb-2">Administrator Password</label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Enter admin password"
-                className="ballot-input"
-                required
-              />
-              <p className="text-xs text-gray-500 mt-2">
-                For demo purposes, use: <code className="font-mono">admin123</code>
-              </p>
-            </div>
-
-            <button type="submit" className="ballot-primary-btn w-full">
-              Access Admin Panel
-            </button>
-          </form>
-
-          <div className="mt-6 p-4 bg-amber-50 rounded-xl border border-amber-200">
-            <p className="text-xs text-amber-900">
-              <strong>Security Notice:</strong> This panel is restricted to authorized election officials only. All
-              access is logged.
-            </p>
+          <div>
+            <CardTitle className="text-3xl">VoteCrypt Admin</CardTitle>
+            <CardDescription className="mt-2">
+              Election Authority Access Portal
+            </CardDescription>
           </div>
-        </div>
-      </div>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <Alert className="border-amber-500 bg-amber-50">
+            <Shield className="h-4 w-4 text-amber-600" />
+            <AlertDescription className="text-amber-900">
+              <strong>Restricted Access:</strong> Only authorized election officials can access this panel.
+            </AlertDescription>
+          </Alert>
+
+          <Button
+            onClick={handleGoogleSignIn}
+            disabled={loading}
+            size="lg"
+            className="w-full"
+          >
+            {loading ? (
+              <>
+                <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                Signing in...
+              </>
+            ) : (
+              <>
+                <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24">
+                  <path
+                    fill="#4285F4"
+                    d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                  />
+                  <path
+                    fill="#34A853"
+                    d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                  />
+                  <path
+                    fill="#FBBC05"
+                    d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
+                  />
+                  <path
+                    fill="#EA4335"
+                    d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+                  />
+                </svg>
+                Sign in with Google
+              </>
+            )}
+          </Button>
+
+          <div className="text-center">
+            <Link href="/" className="text-sm text-muted-foreground hover:text-primary transition-colors">
+              ← Back to Home
+            </Link>
+          </div>
+
+          <Alert variant="default" className="text-xs">
+            <AlertDescription>
+              All access attempts are logged and monitored. Unauthorized access is prohibited.
+            </AlertDescription>
+          </Alert>
+        </CardContent>
+      </Card>
     </div>
   )
 }

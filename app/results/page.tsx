@@ -85,10 +85,8 @@ export default function ResultsPage() {
       <nav className="bg-white border-b border-gray-200 sticky top-0 z-40">
         <div className="ballot-container flex items-center justify-between py-4">
           <Link href="/" className="inline-flex items-center gap-2 text-slate-900 hover:opacity-80 transition-opacity">
-            <div className="w-8 h-8 rounded-xl bg-slate-900 flex items-center justify-center">
-              <Shield className="w-5 h-5 text-white" />
-            </div>
-            <span className="text-2xl font-bold">BALLOT</span>
+            <img src="/favicon.svg" alt="VoteCrypt Logo" className="w-8 h-8" />
+            <span className="text-2xl font-bold">VoteCrypt</span>
           </Link>
           <div className="flex items-center gap-6">
             <a href="/" className="text-gray-600 hover:text-slate-900 font-medium transition-colors">
@@ -126,7 +124,7 @@ export default function ResultsPage() {
         {/* Winner Banner - Show when election is ended */}
         {isEnded && winner && (
           <div className="mb-12 relative overflow-hidden">
-            <div className="bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-500 rounded-2xl p-8 text-center shadow-2xl">
+            <div className="bg-linear-to-r from-amber-500 via-yellow-500 to-amber-500 rounded-2xl p-8 text-center shadow-2xl">
               <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48Y2lyY2xlIGN4PSIyMCIgY3k9IjIwIiByPSIyIiBmaWxsPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMikiLz48L3N2Zz4=')] opacity-50"></div>
               <div className="relative">
                 <Trophy className="w-16 h-16 text-white mx-auto mb-4 drop-shadow-lg" />
@@ -207,7 +205,7 @@ export default function ResultsPage() {
                   </BarChart>
                 </ResponsiveContainer>
               ) : (
-                <div className="h-[350px] flex items-center justify-center text-gray-500">
+                <div className="h-87.5 flex items-center justify-center text-gray-500">
                   No votes cast yet
                 </div>
               )}
@@ -252,7 +250,7 @@ export default function ResultsPage() {
             {/* Pie Chart */}
             <div className="ballot-card ballot-card-hover p-8">
               <h3 className="text-lg font-bold text-slate-900 mb-6 text-center">Vote Share</h3>
-              <div className="h-[250px]">
+              <div className="h-62.5">
                 {results.length > 0 ? (
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>

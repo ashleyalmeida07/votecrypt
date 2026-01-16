@@ -2,10 +2,14 @@
 import { useState, useRef, useCallback, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
-import { Shield, Camera, CheckCircle, AlertCircle, Loader2, RefreshCcw } from "lucide-react"
+import { Shield, Camera, CheckCircle, AlertCircle, Loader2, RefreshCcw, Video } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
 import { toast } from "sonner"
 import Webcam from "react-webcam"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Badge } from "@/components/ui/badge"
 
 export default function VerifyFacePage() {
   const [capturing, setCapturing] = useState(false)
@@ -112,32 +116,38 @@ export default function VerifyFacePage() {
   }
 
   return (
-    <div className="min-h-screen bg-linear-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center p-4">
-      <div className="w-full max-w-2xl">
+    <div className="min-h-screen bg-background flex items-center justify-center p-4">
+      <div className="w-full max-w-2xl space-y-8">
         {/* Logo */}
-        <div className="text-center mb-8">
-          <Link href="/" className="inline-flex items-center gap-3 text-white hover:opacity-80 transition-opacity mb-6">
-            <div className="w-10 h-10 rounded-xl bg-teal-500 flex items-center justify-center">
-              <Shield className="w-6 h-6 text-white" />
-            </div>
-            <span className="text-2xl font-bold">BALLOT</span>
+        <div className="text-center">
+          <Link href="/" className="inline-flex items-center gap-3 hover:opacity-80 transition-opacity mb-6">
+            <img src="/favicon.svg" alt="VoteCrypt Logo" className="w-10 h-10" />
+            <span className="text-2xl font-bold">VoteCrypt</span>
           </Link>
-          <h1 className="text-3xl font-bold text-white mb-2">Face Verification</h1>
-          <p className="text-gray-300">Verify your identity to access the voting portal</p>
         </div>
 
         {/* Card */}
-        <div className="ballot-card p-8">
-          {/* Info Alert */}
-          <div className="mb-6 p-4 bg-blue-50 rounded-xl border border-blue-100">
-            <p className="text-sm text-blue-900">
-              <strong>🎥 Live Verification:</strong> Position your face in the camera frame. We'll compare it with your voter ID photo.
-            </p>
-          </div>
+        <Card className="border-2">
+          <CardHeader>
+            <CardTitle className="text-2xl flex items-center gap-2">
+              <Video className="h-6 w-6" />
+              Face Verification
+            </CardTitle>
+            <CardDescription>
+              Verify your identity to access the voting portal
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {/* Info Alert */}
+            <Alert>
+              <Camera className="h-4 w-4" />
+              <AlertDescription>
+                <strong>Live Verification:</strong> Position your face in the camera frame. We'll compare it with your voter ID photo.
+              </AlertDescription>
+            </Alert>
 
-          {/* Camera View or Captured Image */}
-          <div className="mb-6">
-            <div className="relative rounded-xl overflow-hidden bg-black aspect-video">
+            {/* Camera View or Captured Image */}
+            <div className="relative rounded-xl overflow-hidden bg-black aspect-video border-2">
               {!capturedImage ? (
                 <>
                   <Webcam
@@ -160,10 +170,10 @@ export default function VerifyFacePage() {
                       <select
                         value={selectedDeviceId || ''}
                         onChange={handleDeviceChange}
-                        className="bg-black/60 text-white text-sm rounded-lg px-3 py-2 border border-white/20 backdrop-blur-sm outline-none focus:border-teal-500 cursor-pointer"
+                        className="bg-black/60 text-white text-sm rounded-lg px-3 py-2 border border-white/20 backdrop-blur-sm outline-none focus:border-primary cursor-pointer"
                       >
                         {devices.map((device, key) => (
-                          <option key={key} value={device.deviceId} className="bg-slate-900 text-white">
+                          <option key={key} value={device.deviceId} className="bg-background text-foreground">
                             {device.label || `Camera ${key + 1}`}
                           </option>
                         ))}
@@ -182,121 +192,115 @@ export default function VerifyFacePage() {
               {/* Overlay guide */}
               {!capturedImage && (
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
-                  <div className="w-64 h-80 border-4 border-teal-500 rounded-3xl opacity-50"></div>
+                  <div className="w-64 h-80 border-4 border-primary rounded-3xl opacity-50"></div>
                 </div>
               )}
             </div>
-          </div>
 
-          {/* Verification Status */}
-          {verificationStatus !== 'idle' && (
-            <div className={`mb-6 p-4 rounded-xl border ${verificationStatus === 'success'
-              ? 'bg-green-50 border-green-200 text-green-700'
-              : 'bg-red-50 border-red-200 text-red-700'
-              }`}>
-              <div className="flex items-center gap-3">
+            {/* Verification Status */}
+            {verificationStatus !== 'idle' && (
+              <Alert variant={verificationStatus === 'success' ? 'default' : 'destructive'}>
                 {verificationStatus === 'success' ? (
-                  <>
-                    <CheckCircle className="w-5 h-5" />
-                    <div>
-                      <p className="font-semibold">Verification Successful!</p>
-                      {verificationDetails?.similarity_percentage && (
-                        <p className="text-sm mt-1">Match: {verificationDetails.similarity_percentage}%</p>
-                      )}
-                    </div>
-                  </>
+                  <CheckCircle className="h-4 w-4" />
                 ) : (
-                  <>
-                    <AlertCircle className="w-5 h-5" />
-                    <div>
-                      <p className="font-semibold">Verification Failed</p>
-                      {verificationDetails?.similarity_percentage && (
-                        <p className="text-sm mt-1">Match: {verificationDetails.similarity_percentage}%</p>
-                      )}
-                    </div>
-                  </>
+                  <AlertCircle className="h-4 w-4" />
                 )}
-              </div>
-              {verificationStatus === 'failed' && (
-                <p className="text-sm mt-2 ml-8">
-                  {verificationDetails?.message || "The face doesn't match your voter ID. Please ensure good lighting and try again."}
-                </p>
+                <AlertDescription>
+                  <p className="font-semibold">
+                    {verificationStatus === 'success' ? 'Verification Successful!' : 'Verification Failed'}
+                  </p>
+                  {verificationDetails?.similarity_percentage && (
+                    <p className="text-sm mt-1">Match: {verificationDetails.similarity_percentage}%</p>
+                  )}
+                  {verificationStatus === 'failed' && (
+                    <p className="text-sm mt-2">
+                      {verificationDetails?.message || "The face doesn't match your voter ID. Please ensure good lighting and try again."}
+                    </p>
+                  )}
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {/* Action Buttons */}
+            <div className="flex gap-3">
+              {!capturedImage ? (
+                <Button
+                  onClick={captureImage}
+                  disabled={!capturing || verifying}
+                  size="lg"
+                  className="w-full"
+                >
+                  <Camera className="w-5 h-5 mr-2" />
+                  Capture Photo
+                </Button>
+              ) : (
+                <>
+                  <Button
+                    onClick={retakePhoto}
+                    disabled={verifying || verificationStatus === 'success'}
+                    variant="outline"
+                    size="lg"
+                    className="flex-1"
+                  >
+                    Retake
+                  </Button>
+                  <Button
+                    onClick={verifyFace}
+                    disabled={verifying || verificationStatus === 'success'}
+                    size="lg"
+                    className="flex-1"
+                  >
+                    {verifying ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Verifying...
+                      </>
+                    ) : verificationStatus === 'success' ? (
+                      <>
+                        <CheckCircle className="w-4 h-4 mr-2" />
+                        Verified
+                      </>
+                    ) : (
+                      'Verify Face'
+                    )}
+                  </Button>
+                </>
               )}
             </div>
-          )}
 
-          {/* Action Buttons */}
-          <div className="flex gap-3">
-            {!capturedImage ? (
-              <button
-                onClick={captureImage}
-                disabled={!capturing || verifying}
-                className="w-full bg-teal-500 hover:bg-teal-600 text-white font-semibold rounded-xl px-6 py-3 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-              >
-                <Camera className="w-5 h-5" />
-                Capture Photo
-              </button>
-            ) : (
-              <>
-                <button
-                  onClick={retakePhoto}
-                  disabled={verifying || verificationStatus === 'success'}
-                  className="flex-1 bg-gray-200 hover:bg-gray-300 text-slate-900 font-semibold rounded-xl px-6 py-3 transition-all duration-200 disabled:opacity-50"
-                >
-                  Retake
-                </button>
-                <button
-                  onClick={verifyFace}
-                  disabled={verifying || verificationStatus === 'success'}
-                  className="flex-1 bg-teal-500 hover:bg-teal-600 text-white font-semibold rounded-xl px-6 py-3 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                >
-                  {verifying ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Verifying...
-                    </>
-                  ) : verificationStatus === 'success' ? (
-                    <>
-                      <CheckCircle className="w-4 h-4" />
-                      Verified
-                    </>
-                  ) : (
-                    'Verify Face'
-                  )}
-                </button>
-              </>
-            )}
-          </div>
-
-          {/* Tips */}
-          <div className="mt-6 p-4 bg-gray-50 rounded-xl">
-            <p className="font-semibold text-slate-900 mb-3">Tips for best results:</p>
-            <ul className="space-y-2 text-sm text-gray-700">
-              <li className="flex items-start gap-2">
-                <span className="text-teal-500 mt-0.5">✓</span>
-                <span>Ensure good lighting on your face</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="text-teal-500 mt-0.5">✓</span>
-                <span>Look directly at the camera</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="text-teal-500 mt-0.5">✓</span>
-                <span>Remove sunglasses or face coverings</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="text-teal-500 mt-0.5">✓</span>
-                <span>Keep your face within the guide frame</span>
-              </li>
-            </ul>
-          </div>
-        </div>
+            {/* Tips */}
+            <Card className="border">
+              <CardContent className="pt-6">
+                <p className="font-semibold mb-3">Tips for best results:</p>
+                <ul className="space-y-2 text-sm text-muted-foreground">
+                  <li className="flex items-start gap-2">
+                    <CheckCircle className="h-4 w-4 text-primary mt-0.5 shrink-0" />
+                    <span>Ensure good lighting on your face</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <CheckCircle className="h-4 w-4 text-primary mt-0.5 shrink-0" />
+                    <span>Look directly at the camera</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <CheckCircle className="h-4 w-4 text-primary mt-0.5 shrink-0" />
+                    <span>Remove sunglasses or face coverings</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <CheckCircle className="h-4 w-4 text-primary mt-0.5 shrink-0" />
+                    <span>Keep your face within the guide frame</span>
+                  </li>
+                </ul>
+              </CardContent>
+            </Card>
+          </CardContent>
+        </Card>
 
         {/* Security Notice */}
-        <div className="mt-6 text-center">
-          <p className="text-sm text-gray-400">
-            🔒 Face verification ensures only you can access your voting account
-          </p>
+        <div className="text-center">
+          <div className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+            <Shield className="h-4 w-4" />
+            <span>Face verification ensures only you can access your voting account</span>
+          </div>
         </div>
       </div>
     </div>

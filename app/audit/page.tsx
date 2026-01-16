@@ -89,10 +89,8 @@ export default function AuditDashboard() {
                 <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
                     <div className="flex items-center gap-3">
                         <Link href="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
-                            <div className="w-8 h-8 rounded bg-teal-500 flex items-center justify-center">
-                                <Shield className="w-5 h-5 text-white" />
-                            </div>
-                            <span className="font-bold tracking-wider">BALLOT.AUDIT</span>
+                            <img src="/favicon.svg" alt="VoteCrypt Logo" className="w-8 h-8" />
+                            <span className="font-bold tracking-wider">VoteCrypt.AUDIT</span>
                         </Link>
                         <span className="px-2 py-0.5 rounded text-xs bg-teal-500/10 text-teal-500 border border-teal-500/20">
                             LIVE SYSTEM
@@ -164,7 +162,7 @@ export default function AuditDashboard() {
 
                     {/* Integrity Status */}
                     <div className="bg-slate-900/50 border border-teal-900/30 rounded-xl p-6 relative overflow-hidden">
-                        <div className="absolute inset-0 bg-gradient-to-br from-teal-500/5 to-transparent"></div>
+                        <div className="absolute inset-0 bg-linear-to-br from-teal-500/5 to-transparent"></div>
                         <h3 className="text-teal-500 text-sm uppercase tracking-wider mb-1 flex items-center gap-2">
                             <Lock className="w-4 h-4" /> Integrity Check
                         </h3>
@@ -193,7 +191,7 @@ export default function AuditDashboard() {
 
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                     {/* Main Feed: Live Votes */}
-                    <div className="lg:col-span-2 bg-slate-900/50 border border-white/10 rounded-xl overflow-hidden flex flex-col h-[600px]">
+                    <div className="lg:col-span-2 bg-slate-900/50 border border-white/10 rounded-xl overflow-hidden flex flex-col h-150">
                         <div className="p-4 border-b border-white/10 flex items-center justify-between bg-white/5">
                             <h3 className="text-white font-bold flex items-center gap-2">
                                 <Database className="w-4 h-4 text-teal-500" />
@@ -249,7 +247,7 @@ export default function AuditDashboard() {
                     </div>
 
                     {/* Sidebar: Candidate Status (Anonymized or Aggregate) */}
-                    <div className="bg-slate-900/50 border border-white/10 rounded-xl overflow-hidden h-[600px] flex flex-col">
+                    <div className="bg-slate-900/50 border border-white/10 rounded-xl overflow-hidden h-150 flex flex-col">
                         <div className="p-4 border-b border-white/10 bg-white/5">
                             <h3 className="text-white font-bold">Candidate Standings</h3>
                             <p className="text-xs text-gray-500 mt-1">Live aggregated counts</p>

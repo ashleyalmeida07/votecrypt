@@ -4,6 +4,7 @@ import { Geist, Geist_Mono } from "next/font/google"
 import { Inter } from "next/font/google"
 import { Analytics } from "@vercel/analytics/next"
 import { AuthProvider } from "@/contexts/AuthContext"
+import { ThemeProvider } from "@/components/theme-provider"
 import { Toaster } from "@/components/ui/sonner"
 import "./globals.css"
 
@@ -12,25 +13,25 @@ const _geistMono = Geist_Mono({ subsets: ["latin"] })
 const _inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "Project BALLOT - Secure Blockchain Voting",
-  description: "A secure, transparent, and decentralized voting platform powered by blockchain technology.",
-  generator: "v0.app",
+  title: "VoteCrypt - Secure Blockchain Voting",
+  description: "A secure, transparent, and decentralized voting platform powered by blockchain technology and zero-knowledge proofs.",
   icons: {
     icon: [
       {
-        url: "/icon-light-32x32.png",
+        url: "/favicon-light.svg",
+        type: "image/svg+xml",
         media: "(prefers-color-scheme: light)",
       },
       {
-        url: "/icon-dark-32x32.png",
+        url: "/favicon-dark.svg",
+        type: "image/svg+xml",
         media: "(prefers-color-scheme: dark)",
       },
       {
-        url: "/icon.svg",
+        url: "/favicon.svg",
         type: "image/svg+xml",
       },
     ],
-    apple: "/apple-icon.png",
   },
 }
 
@@ -40,13 +41,20 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en">
-      <body className="font-sans antialiased bg-slate-50 text-slate-900">
-        <AuthProvider>
-          {children}
-          <Toaster />
-          <Analytics />
-        </AuthProvider>
+    <html lang="en" suppressHydrationWarning>
+      <body className="font-sans antialiased">
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="system"
+          enableSystem
+          disableTransitionOnChange
+        >
+          <AuthProvider>
+            {children}
+            <Toaster />
+            <Analytics />
+          </AuthProvider>
+        </ThemeProvider>
       </body>
     </html>
   )

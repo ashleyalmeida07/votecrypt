@@ -1,15 +1,25 @@
 "use client"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { Shield } from "lucide-react"
+import { useTheme } from "next-themes"
+import { Lock, Shield, UserPlus, Moon, Sun } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
 import { toast } from "sonner"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 
 export default function SignUpPage() {
   const [loading, setLoading] = useState(false)
+  const [mounted, setMounted] = useState(false)
+  const { theme, setTheme } = useTheme()
   const { signInWithGoogle } = useAuth()
   const router = useRouter()
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
   const handleGoogleSignUp = async () => {
     setLoading(true)
@@ -61,79 +71,117 @@ export default function SignUpPage() {
   }
 
   return (
-    <div className="min-h-screen bg-linear-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
-        {/* Logo */}
-        <div className="text-center mb-12">
-          <Link href="/" className="inline-flex items-center gap-3 text-white hover:opacity-80 transition-opacity mb-6">
-            <div className="w-10 h-10 rounded-xl bg-teal-500 flex items-center justify-center">
-              <Shield className="w-6 h-6 text-white" />
-            </div>
-            <span className="text-2xl font-bold">BALLOT</span>
+    <div className="min-h-screen bg-background">
+      {/* Navigation */}
+      <nav className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/60">
+        <div className="w-full max-w-350 mx-auto flex h-16 items-center justify-between px-4 md:px-6 lg:px-8">
+          <Link href="/" className="flex items-center gap-2 shrink-0">
+            <img src="/favicon.svg" alt="VoteCrypt Logo" className="h-8 w-8" />
+            <span className="text-xl md:text-2xl font-bold bg-linear-to-r from-primary to-primary/60 bg-clip-text text-transparent whitespace-nowrap">
+              VoteCrypt
+            </span>
           </Link>
-          <h1 className="text-3xl font-bold text-white mb-2">Create Account</h1>
-          <p className="text-gray-300">Join the secure democratic voting system</p>
+          
+          <div className="flex items-center gap-4">
+            <Link href="/login">
+              <Button variant="outline" size="sm">
+                Login
+              </Button>
+            </Link>
+            {mounted && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+                className="rounded-full"
+              >
+                {theme === "dark" ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+              </Button>
+            )}
+          </div>
+        </div>
+      </nav>
+
+      <div className="flex items-center justify-center p-4 py-16">
+      <div className="w-full max-w-md space-y-8">
+        {/* Logo */}
+        <div className="text-center">
+          <Link href="/" className="inline-flex items-center gap-3 hover:opacity-80 transition-opacity mb-6">
+            <img src="/favicon.svg" alt="VoteCrypt Logo" className="w-10 h-10" />
+            <span className="text-2xl font-bold">VoteCrypt</span>
+          </Link>
         </div>
 
         {/* Card */}
-        <div className="ballot-card p-8">
-          <div className="mb-6">
-            <h2 className="text-xl font-bold text-slate-900 mb-2">Get Started</h2>
-            <p className="text-gray-600">Create your secure voting account</p>
-          </div>
+        <Card className="border-2">
+          <CardHeader className="space-y-1">
+            <CardTitle className="text-2xl flex items-center gap-2">
+              <UserPlus className="h-6 w-6" />
+              Create Account
+            </CardTitle>
+            <CardDescription>
+              Join the secure democratic voting system
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <Alert>
+              <Lock className="h-4 w-4" />
+              <AlertDescription>
+                <strong>2-Step Verification:</strong> Sign up with Google, then verify your phone number
+              </AlertDescription>
+            </Alert>
 
-          <div className="mb-4 p-4 bg-blue-50 rounded-xl border border-blue-100">
-            <p className="text-sm text-blue-900">
-              <strong>🔒 2-Step Verification:</strong> Sign up with Google, then verify your email
-            </p>
-          </div>
+            {/* Google Sign Up Button */}
+            <Button
+              onClick={handleGoogleSignUp}
+              disabled={loading}
+              variant="outline"
+              size="lg"
+              className="w-full"
+            >
+              {loading ? (
+                "Creating account..."
+              ) : (
+                <>
+                  <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24">
+                    <path
+                      fill="#4285F4"
+                      d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                    />
+                    <path
+                      fill="#34A853"
+                      d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                    />
+                    <path
+                      fill="#FBBC05"
+                      d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
+                    />
+                    <path
+                      fill="#EA4335"
+                      d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+                    />
+                  </svg>
+                  Continue with Google
+                </>
+              )}
+            </Button>
 
-          {/* Google Sign Up Button */}
-          <button
-            onClick={handleGoogleSignUp}
-            disabled={loading}
-            className="w-full bg-white hover:bg-gray-50 border-2 border-gray-200 text-slate-900 font-semibold rounded-xl px-6 py-3 transition-all duration-200 active:scale-95 flex items-center justify-center gap-3 mb-6"
-          >
-            {loading ? (
-              "Creating account..."
-            ) : (
-              <>
-                <svg className="w-5 h-5" viewBox="0 0 24 24">
-                  <path
-                    fill="#4285F4"
-                    d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                  />
-                  <path
-                    fill="#34A853"
-                    d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                  />
-                  <path
-                    fill="#FBBC05"
-                    d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-                  />
-                  <path
-                    fill="#EA4335"
-                    d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-                  />
-                </svg>
-                Continue with Google
-              </>
-            )}
-          </button>
-
-          <p className="text-center text-sm text-gray-600 mt-6">
-            Already have an account?{" "}
-            <Link href="/login" className="text-teal-600 hover:text-teal-700 font-semibold">
-              Sign in here
-            </Link>
-          </p>
-        </div>
+            <div className="text-center text-sm text-muted-foreground">
+              Already have an account?{" "}
+              <Link href="/login" className="text-primary hover:underline font-medium">
+                Sign in here
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Security Notice */}
-        <div className="mt-6 text-center">
-          <p className="text-sm text-gray-400">
-            🔒 Your data is encrypted and secured with industry-standard security
-          </p>
+        <div className="text-center">
+          <div className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+            <Shield className="h-4 w-4" />
+            <span>Your data is encrypted and secured with industry-standard security</span>
+          </div>
+        </div>
         </div>
       </div>
     </div>

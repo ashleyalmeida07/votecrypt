@@ -115,10 +115,8 @@ export default function VerifyPhonePage() {
         {/* Logo */}
         <div className="text-center mb-12">
           <Link href="/" className="inline-flex items-center gap-3 text-white hover:opacity-80 transition-opacity mb-6">
-            <div className="w-10 h-10 rounded-xl bg-teal-500 flex items-center justify-center">
-              <Shield className="w-6 h-6 text-white" />
-            </div>
-            <span className="text-2xl font-bold">BALLOT</span>
+            <img src="/favicon.svg" alt="VoteCrypt Logo" className="w-10 h-10" />
+            <span className="text-2xl font-bold">VoteCrypt</span>
           </Link>
           <h1 className="text-3xl font-bold text-white mb-2">Verify Your Email</h1>
           <p className="text-gray-300">Additional security verification required</p>
